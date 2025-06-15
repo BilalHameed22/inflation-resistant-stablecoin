@@ -8,7 +8,7 @@
 //     Pod,
 // };
 // use solana_sdk_ids::system_program;
-use solana_program::{pubkey, pubkey::Pubkey};
+// use solana_program::{pubkey, pubkey::Pubkey};
 use bytemuck::bytes_of_mut;
 use anchor_lang::prelude::*;
 // use anchor_lang::{declare_id, program};
@@ -38,13 +38,13 @@ pub mod iopenbook;
 pub mod pricing;
 
 use crate::pricing::Stablecoins;
-use crate::pricing::{Initialize, IrmaCommon};
-use crate::pricing::{initialize, set_mint_price, mint_irma, redeem_irma};
+use crate::pricing::{ /* Initialize, */ IrmaCommon};
+use crate::pricing::{ /* initialize, */ set_mint_price, mint_irma, redeem_irma};
 use crate::iopenbook::{EventHeap, Market, ConsumeEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
 use crate::iopenbook::{/*OpenBookV2,*/ get_latest_slot, consume_given_events, MAX_NUM_EVENTS};
 
 
-pub fn crank<'info>(ctx: Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Result<()> {
+pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Result<()> {
     let state = ctx.accounts.state.load_mut()?;
     let slots = get_latest_slot()?;
 
@@ -275,7 +275,7 @@ pub enum OpenBookEvent {
 }
 
 pub fn handle_openbook_event(
-    ctx: Context<IrmaCommon>,
+    ctx: &Context<IrmaCommon>,
     event: OpenBookEvent,
 ) -> Result<()> {
     match event {
@@ -290,7 +290,7 @@ pub fn handle_openbook_event(
 }
 
 pub fn oracle_inflation_input<'info>(
-    ctx: Context<'_, '_, '_, 'info, IrmaCommon<'info>>,
+    ctx: &Context<'_, '_, '_, 'info, IrmaCommon<'info>>,
     inflation_percent: f64,
     stablecoin: Stablecoins,
     stablecoin_price_usd: f64,

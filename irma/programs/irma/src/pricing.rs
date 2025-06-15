@@ -3,7 +3,9 @@
 // #[cfg(feature = "idl-build")]
 
 use solana_sdk_ids::system_program;
-use bytemuck::{Zeroable};
+use static_assertions::const_assert_eq;
+use std::mem::size_of;
+use bytemuck::{Zeroable, /* cast_slice, */ bytes_of_mut};
 use anchor_lang::prelude::*;
 // use anchor_lang::*;
 
@@ -13,6 +15,7 @@ use crate::pricing::Stablecoins::*;
 
 // The number of stablecoins that are currently supported by the IRMA program.
 pub const BACKING_COUNT: usize = Stablecoins::USDE as usize; // 6
+pub const BUMP_VALUE: u8 = 13; // Bump seed for PDA
 
 // All currently existing stablecoins with about $100 M in circulation
 // are supported. This list is not exhaustive and will be updated as new
@@ -103,17 +106,10 @@ impl Stablecoins {
 /// IRMA pricing module
 /// FIXME: the decimals are all assumed to be zero, which is not true for all stablecoins.
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+    pub fn initialize(ctx: &Context<Initialize>) -> Result<()> {
         msg!("Greetings from: {:?}", ctx.program_id);
         let state = &mut ctx.accounts.state.load_init()?;
-        if state.mint_price.len() > 0 {
-            return Ok(());
-        }
-        // state.mint_price = Vec::<f64>::with_capacity(EnumCount as usize);
-        // msg!("Vec capacity: {:?}", state.mint_price.capacity());
-        // state.backing_reserves = Vec::<u64>::with_capacity(EnumCount as usize);
-        // state.irma_in_circulation = Vec::<u64>::with_capacity(EnumCount as usize);
-        // state.backing_decimals = Vec::<u8>::with_capacity(EnumCount as usize);
+
         state.mint_price = [1.0; EnumCount as usize]; // Initialize with 1.0 for each stablecoin
         msg!("Vec length: {:?}", state.mint_price.len());
         state.irma_in_circulation = [1; EnumCount as usize];
@@ -124,7 +120,7 @@ impl Stablecoins {
         Ok(())
     }
 
-    pub fn hello(ctx: Context<IrmaCommon>) -> Result<()> {
+    pub fn hello(ctx: &Context<IrmaCommon>) -> Result<()> {
         let mut state = ctx.accounts.state.load_mut()?;
         if state.mint_price.len() == 0 {
             state.mint_price = [1.0; EnumCount as usize];
@@ -142,7 +138,7 @@ impl Stablecoins {
     /// IrmaCommon of IRMA expressed in terms of a given quote token.
     /// This should be called for every backing stablecoin supported, only once per day
     /// because Truflation updates the inflation data only once per day.
-    pub fn set_mint_price(ctx: Context<IrmaCommon>, quote_token: Stablecoins, mint_price: f64) -> Result<()> {
+    pub fn set_mint_price(ctx: &Context<IrmaCommon>, quote_token: Stablecoins, mint_price: f64) -> Result<()> {
         let mut state = ctx.accounts.state.load_mut()?;
         require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
         
@@ -154,7 +150,7 @@ impl Stablecoins {
 
     /// Mint IRMA tokens for a given amount of quote token.
     /// FIXME: Currently assumes that decimal point is zero digits for both IRMA and quote token.
-    pub fn mint_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, amount: u64) -> Result<()> {
+    pub fn mint_irma(ctx: &Context<IrmaCommon>, quote_token: Stablecoins, amount: u64) -> Result<()> {
         require!(amount > 0, CustomError::InvalidAmount);
 
         let mut state = ctx.accounts.state.load_mut()?;
@@ -180,9 +176,11 @@ impl Stablecoins {
     /// RedeemIRMA - user surrenders IRMA in irma_amount, expecting to get back quote_token according to redemption price.
     /// FIXME: If resulting redemption price increases by more than 0.0000001, then actual redemption price 
     /// should be updated immediately.
-    pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
+    pub fn redeem_irma(ctx: &Context<IrmaCommon>, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
         let mut state = ctx.accounts.state.load_mut()?;
         require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
+
+        // msg!("Redeeming {} IRMA for {}, data: {:?}", irma_amount, quote_token.to_string(), ctx.accounts.state.deref().data[..8]);
 
         if irma_amount == 0 { return Ok(()) };
 
@@ -198,7 +196,7 @@ impl Stablecoins {
 
     #[derive(Accounts)]
     pub struct Initialize<'info> {
-        #[account(init, space = State::LEN, payer = irma_admin, seeds = [b"irma_state"], bump)]
+        #[account(init, space = State::LEN, payer = irma_admin, seeds = [b"state"], bump)]
         pub state: AccountLoader<'info, State>,
         #[account(mut)]
         pub irma_admin: Signer<'info>,
@@ -208,7 +206,7 @@ impl Stablecoins {
 
     #[derive(Accounts)]
     pub struct IrmaCommon<'info> {
-        #[account(init, space = State::LEN, payer = trader, seeds = [b"irma_state"], bump)]
+        #[account(init, space = State::LEN, payer = trader, seeds = [b"state"], bump)]
         pub state: AccountLoader<'info, State>,
         #[account(mut)]
         pub trader: Signer<'info>,
@@ -223,11 +221,80 @@ impl Stablecoins {
         pub backing_reserves: [u64; EnumCount as usize], // backing reserves in terms of the backing stablecoin
         pub irma_in_circulation: [u64; EnumCount as usize],
         pub backing_decimals: [u64; EnumCount as usize], // need only u8, but for alignment reasons we use u64
-        pub padding: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
         pub bump: u8, // Bump seed for PDA
+        pub padding: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
     }
+
+    // #[account(discriminator = State::DISCRIMINATOR)]
+    #[account(zero_copy)]
+    #[derive(Debug)]
+    pub struct StateWithDiscriminator {
+        pub discriminator: [u8; 8], // discriminator for the state account
+        pub state: State, // the actual state data
+    }
+
+    const_assert_eq!(
+        size_of::<State>(),
+        State::LEN - 8
+    );
+
+
     impl State {
-        pub const LEN: usize = 32*(EnumCount as usize) + 8;
+        pub const LEN: usize = 32*(EnumCount as usize) + 8 + 8; // extra 8 bytes for hidden discriminator
+        pub fn new_mut() -> (&'static mut Self, &'static mut [u8]) {
+            msg!("Creating a new State instance with hidden discriminator, size: {}", size_of::<StateWithDiscriminator>());
+            let mut alloc = StateWithDiscriminator {
+                discriminator: [0u8; 8],
+                state: State {
+                    mint_price: [1.0; EnumCount as usize],
+                    backing_reserves: [0; EnumCount as usize],
+                    irma_in_circulation: [0; EnumCount as usize],
+                    backing_decimals: [6, 6, 6, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0], // USDR and USD1 are not yet in Solana
+                    bump: BUMP_VALUE,
+                    padding: [0; 7],
+                },
+            };
+            alloc.discriminator.copy_from_slice(&<State as Discriminator>::DISCRIMINATOR);
+            let disc: &'static mut [u8] = bytes_of_mut(Box::leak(Box::new(alloc)));
+            (&mut Box::leak(Box::new(alloc)).state, disc)
+        }
+        // pub fn from(buffer: &mut [u8; State::LEN]) -> Self {
+        //     // Deserialize the buffer into a State instance
+        //     if buffer.len() >= State::LEN {
+        //         self.discriminator.copy_from_slice(&buffer[8..16]);
+
+        //         let mint_price_bytes = &buffer[16..16 + 8 * EnumCount as usize];
+        //         let mint_price_f64: &[f64] = cast_slice(mint_price_bytes);
+        //         self.mint_price.copy_from_slice(mint_price_f64);
+
+        //         let backing_reserves_bytes = &buffer[16 + 8 * EnumCount as usize..16 + 16 * EnumCount as usize];
+        //         let backing_reserves_u64: &[u64] = cast_slice(backing_reserves_bytes);
+        //         self.backing_reserves.copy_from_slice(backing_reserves_u64);
+
+        //         let irma_in_circulation_bytes = &buffer[16 + 16 * EnumCount as usize..16 + 24 * EnumCount as usize];
+        //         let irma_in_circulation_u64: &[u64] = cast_slice(irma_in_circulation_bytes);
+        //         self.irma_in_circulation.copy_from_slice(irma_in_circulation_u64);
+
+        //         let backing_decimals_bytes = &buffer[16 + 24 * EnumCount as usize..16 + 32 * EnumCount as usize];
+        //         let backing_decimals_u64: &[u64] = cast_slice(backing_decimals_bytes);
+        //         self.backing_decimals.copy_from_slice(backing_decimals_u64);
+        //         self.bump = buffer[16 + 32 * EnumCount as usize];
+        //     }
+        //     state
+        // }
+
+        // pub fn try_from(buffer: &[u8]) -> Result<Self> {
+        //     if buffer.len() < State::LEN {
+        //         return Err(ErrorCode::InvalidState.into());
+        //     }
+        //     let mut state = State::new();
+        //     state.discriminator.copy_from_slice(&buffer[0..8]);
+        //     if state.discriminator != <State as Discriminator>::DISCRIMINATOR {
+        //         return Err(ErrorCode::InvalidState.into());
+        //     }
+        //     state = State::from(cast_slice(buffer));
+        //     Ok(state)
+        // }
     }
     // #[account(zero_copy)]
     // pub struct IrmaCommonBumps { bump: u8 };

@@ -33,7 +33,7 @@ itertools = "0.10.3"
 num_enum = "0.5.1"
 # pyth-sdk-solana = { workspace = true }
 solana-security-txt = "1.1.1"
-solana-program = { workspace = true }
+# solana-program = { workspace = true }
 solana-sdk = { workspace = true, optional = true }
 static_assertions = "1.1"
 solana-sdk-ids = "2.2.1"

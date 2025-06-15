@@ -195,7 +195,8 @@ pub struct Market {
 }
 
 const_assert_eq!(
-    size_of::<Market>() - 8,    // 856 with 8 byte discrepancy
+    size_of::<Market>(),        // 864
+    8 +                         // discriminator (hidden)
     32 +                        // market_authority
     32 +                        // collect_fee_admin
     32 +                        // open_order_admin
