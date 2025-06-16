@@ -47,7 +47,7 @@ mod tests {
         for i in BACKING_COUNT as usize..EnumCount as usize {
             assert_eq!(state.mint_price[i], 1.0);
             assert_eq!(state.backing_reserves[i], 0);
-            assert_eq!(state.irma_in_circulation[i], 0);
+            assert_eq!(state.irma_in_circulation[i], 1);
             assert_eq!(state.backing_decimals[i], 0);
         }
         for i in 0..BACKING_COUNT as usize {
@@ -391,15 +391,16 @@ mod tests {
         let program_id: &'static Pubkey = &irma_program::IRMA_ID;
         let (state_loader, irma_admin_account, sys_account) 
             = initialize_anchor(program_id);
-        let accounts: IrmaCommon = IrmaCommon {
+        let mut accounts: IrmaCommon = IrmaCommon {
             state: state_loader.clone(),
             trader: irma_admin_account.clone(),
             system_program: sys_account.clone(),
         };
         let state = accounts.state.clone();
-        let state = Box::leak(Box::new(state.load_mut().unwrap()));
+        let state: &mut State = &mut state.load_mut().unwrap();
+        // let state = Box::leak(Box::new(state.load_mut().unwrap()));
 
-        let mut_accounts: &mut IrmaCommon<'static> = Box::leak(Box::new(accounts));
+        let mut_accounts: &mut IrmaCommon<'static> = &mut accounts; // Box::leak(Box::new(accounts));
         msg!("Pre-redeem IRMA state:");
         let result = set_initial_conditions(state, 1000000, 100000, 1.0);
         match result {
@@ -528,6 +529,7 @@ mod tests {
         msg!("Redeem IRMA successful:");
         msg!("Backing reserves for USDT: {:?}", state.backing_reserves);
         msg!("IRMA in circulation for USDT: {:?}", state.irma_in_circulation);
+
         Ok(())
     }
 
@@ -586,6 +588,22 @@ mod tests {
                 Ok(_) => {
                     msg!("Redeem IRMA successful for USDT");
                 }
+            }
+            reslt = redeem_irma(&ctx, Stablecoins::PYUSD, 1_000);
+            match reslt {
+                Err(e) => {
+                    msg!("Error redeeming IRMA for PYUSD: {:?}", e);
+                    break; // Exit loop on error
+                },
+                Ok(_) => {
+                    msg!("Redeem IRMA successful for PYUSD");
+                }
+            }
+            let state: State = *mut_accounts.state.load().unwrap();
+            for i in 0..BACKING_COUNT as usize {
+                msg!("Backing reserves for {:?}", state.backing_reserves[i]);
+                msg!("IRMA in circulation for {:?}", state.irma_in_circulation[i]);
+                msg!("Mint price for {:?}", state.mint_price[i]);
             }
         }
         msg!("-------------------------------------------------------------------------");

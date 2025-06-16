@@ -225,6 +225,61 @@ impl Stablecoins {
         pub padding: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
     }
 
+    // Alternative implementation that allows for easy addition of new stablecoins
+    //
+    // #[account(zero_copy)]
+    // #[derive(Debug)]
+    // pub struct StableState {
+    //     pub symbol: [char; 4], // symbol of the stablecoin, e.g. "USDT"
+    //     pub mint_address: Pubkey, // mint address of the stablecoin
+    //     pub backing_decimals: u64, // need only u8, but for alignment reasons we use u64
+    //     pub mint_price: f64, // mint price of IRMA in terms of the backing stablecoin
+    //     pub backing_reserves: u64, // backing reserves in terms of the backing stablecoin
+    //     pub irma_in_circulation: u64,
+    // }
+
+    // #[account(zero_copy)]
+    // #[derive(Debug)]
+    // pub struct StateVectors {
+    //     pub vectors: Vec<StableState>,
+    //     pub bump: u8, // Bump seed for PDA
+    //     pub padding: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
+    // }
+
+    // StatesEnum::USDT::StableState! {
+    // pub const USDT: StableState = StableState {
+    //     symbol: ['U', 'S', 'D', 'T'],
+    //     mint_address: pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6"), // FIXME: wrong pubkey
+    //     backing_decimals: 6,
+    //     mint_price: 1.0,
+    //     backing_reserves: 0,
+    //     irma_in_circulation: 1,
+    // };
+
+    // pub const USDC: StableState = StableState {
+    //     symbol: ['U', 'S', 'D', 'C'],
+    //     mint_address: pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6"), // USDC mint address on Solana
+    //     backing_decimals: 6,
+    //     mint_price: 1.0,
+    //     backing_reserves: 0,
+    //     irma_in_circulation: 1,
+    // };
+
+    // impl StableState {
+    //     pub fn symbol(&self) -> &[char; 4] {
+    //         self.symbol;
+    //     }
+
+    //     pub fn mint_price(&self) -> f64 {
+    //         self.mint_price
+    //     }
+
+    //     // Example of a method that mutates the inner struct
+    //     pub fn increment_reserve(&mut self, amount: u64) {
+    //         self.backing_reserves += amount;
+    //     }
+    // }
+
     // #[account(discriminator = State::DISCRIMINATOR)]
     #[account(zero_copy)]
     #[derive(Debug)]
@@ -248,7 +303,7 @@ impl Stablecoins {
                 state: State {
                     mint_price: [1.0; EnumCount as usize],
                     backing_reserves: [0; EnumCount as usize],
-                    irma_in_circulation: [0; EnumCount as usize],
+                    irma_in_circulation: [1; EnumCount as usize],
                     backing_decimals: [6, 6, 6, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0], // USDR and USD1 are not yet in Solana
                     bump: BUMP_VALUE,
                     padding: [0; 7],
