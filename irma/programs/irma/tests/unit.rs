@@ -105,7 +105,7 @@ mod tests {
 
         let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
         let state_key: &'static mut Pubkey = Box::leak(Box::new(state_account));
-        msg!("State pre-test account data: {:?}", state_data);
+        // msg!("State pre-test account data: {:?}", state_data);
         let state_account_info: AccountInfo<'static> = AccountInfo::new(
             state_key,
             false, // is_signer
@@ -116,8 +116,8 @@ mod tests {
             false,
             0,
         );
-        msg!("State account created: {:?}", state_account_info.key);
-        msg!("State owner: {:?}", owner);
+        // msg!("State account created: {:?}", state_account_info.key);
+        // msg!("State owner: {:?}", owner);
         // Use a mock Signer for testing purposes
         let signer_pubkey: &'static mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
         let lamportsx: &'static mut u64 = Box::leak(Box::new(0u64));
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn test_redeem_irma_anchor() -> Result<()> {        
         msg!("-------------------------------------------------------------------------");
-        msg!("Testing redeem IRMA when mint price is less than backing price");  
+        msg!("Testing redeem IRMA when mint price is less than redemption price");  
         msg!("-------------------------------------------------------------------------");
         let program_id: &'static Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
         let (state_account, irma_admin_account, sys_account) 
@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn test_redeem_irma_normal() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
-        msg!("Testing redeem IRMA with normal conditions");  
+        msg!("Testing redeem IRMA with normal conditions, but with large discrepancies in mint prices");  
         msg!("-------------------------------------------------------------------------");
         let program_id: &'static Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
         let (state_account, irma_admin_account, sys_account) 
@@ -527,10 +527,24 @@ mod tests {
                     break; // Exit loop on error
                 },
                 Ok(_) => {
-                    msg!("Redeem IRMA successful for USDT");
+                    // msg!("Redeem IRMA successful for USDT");
                 }
             }
+
+            let state: &State = &accounts.state;
+            for i in 0..BACKING_COUNT {
+                let reserve: u64 = state.backing_reserves[i as usize];
+                let circulation: u64 = state.irma_in_circulation[i as usize];
+                let redemption_price: f64 = reserve as f64 / circulation as f64;
+                msg!("{}, {:.3}, {}, {}, {:.3}", 
+                    Stablecoins::from_index(i).to_string(), 
+                    state.mint_price[i as usize], 
+                    reserve,
+                    circulation,
+                    redemption_price);
+            }
         }
+
         ctx = Context::new(
             program_id,
             &mut accounts,
