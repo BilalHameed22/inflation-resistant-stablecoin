@@ -21,6 +21,10 @@ the mint price in time. That's it, that would be the functionality test for mint
 unit tests on the mint_irma() function. This section of the doc will add more info later.
 
 ## "Total Redemption" Test
+Note: these results were obtained by running test_redeem_irma_normal in 
+
+https://github.com/PureMoney/inflation-resistant-stablecoin/blob/carlos/quick_demo/irma/programs/irma/tests/unit.rs
+
 The redemption functionality test is much more interesting than any minting test we could think of. 
 
 The IRMA program is designed to be fungible with respect to all backing stablecoins. In other words, once minted, each IRMA does 
@@ -78,5 +82,4 @@ reserve total divided by IRMA in circulation for a stablecoin, notice how the re
 to approach the mint price for each stablecoin, even when no minting is going on.
 
 ![IRMA_Circulation_with_labels](https://github.com/user-attachments/assets/f73d90a7-80ae-43be-b07d-2154eaf3a732)
-
 
