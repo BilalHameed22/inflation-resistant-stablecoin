@@ -509,6 +509,7 @@ mod tests {
             &[],
             irmamod::RedeemIrmaBumps::default(), // Use default bumps if not needed
         );
+        let mut count: u64 = 0;
         // Test for near maximum redemption, multiple times, until it fails.
         // What we expect is that these repeated redemptions will equalize the differences between
         // mint prices and redemptions prices for all stablecoins.
@@ -531,18 +532,23 @@ mod tests {
                 }
             }
 
-            let state: &State = &accounts.state;
-            for i in 0..BACKING_COUNT {
-                let reserve: u64 = state.backing_reserves[i as usize];
-                let circulation: u64 = state.irma_in_circulation[i as usize];
-                let redemption_price: f64 = reserve as f64 / circulation as f64;
-                msg!("{}, {:.3}, {}, {}, {:.3}", 
-                    Stablecoins::from_index(i).to_string(), 
-                    state.mint_price[i as usize], 
-                    reserve,
-                    circulation,
-                    redemption_price);
+            // Print the current state after every ten redemptions
+            if count % 10 == 0 {
+                let state: &State = &accounts.state;
+                for i in 0..BACKING_COUNT {
+                    let reserve: u64 = state.backing_reserves[i as usize];
+                    let circulation: u64 = state.irma_in_circulation[i as usize];
+                    let redemption_price: f64 = reserve as f64 / circulation as f64;
+                    msg!("{}, {:.3}, {}, {}, {:.3}", 
+                        Stablecoins::from_index(i).to_string(), 
+                        state.mint_price[i as usize], 
+                        reserve,
+                        circulation,
+                        redemption_price);
+                }
             }
+
+            count += 1;
         }
 
         ctx = Context::new(

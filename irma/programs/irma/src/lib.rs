@@ -299,18 +299,17 @@ pub mod irmamod {
             average_diff /= count as f64;
             // msg!("Average price difference: {}", average_diff);
 
-            let min_diff: f64 = 0.1; // price differences below this are ignored
+            let min_diff: f64 = 0.001; // price differences below this are ignored
 
             let mut max_price_diff: f64 = average_diff;
             let mut other_target: Stablecoins = quote_token;
             for (i, price_diff) in price_differences.iter().enumerate() {
-                // msg!("{}: {}", i, *price_diff);
-                if (*price_diff - max_price_diff).abs() > min_diff {
+                // msg!("{}: {}, max {}", i, *price_diff, max_price_diff);
+                if (*price_diff - max_price_diff).abs() > min_diff && *price_diff > max_price_diff {
                     max_price_diff = *price_diff;
                     other_target = Stablecoins::from_index(i);
                 }
             }
-            // max_price_diff = (max_price_diff - average_diff).abs();
             // msg!("Max token: {}", other_target.to_string());
             // msg!("Max price diff: {}", max_price_diff);
 
@@ -325,10 +324,10 @@ pub mod irmamod {
 
             // if max price diff does not deviate much from average diff or all inflation-adjusted prices 
             // are less than the redemption prices, then reductions pertain to quote_token only.
-            if ((max_price_diff - average_diff).abs() < min_diff) || (average_diff < 0.0) {
-                msg!("No significant price differences found");
+            if (average_diff.abs() < min_diff) || (average_diff < 0.0) {
+                // msg!("No significant price differences found");
                 if price_differences[quote_token as usize] >= 0.0 || other_target == quote_token {
-                    msg!("If quote_token m price is larger than r price, then situation is normal.");
+                    // msg!("If quote_token m price is larger than r price, then situation is normal.");
                     // If the price difference is positive, it means that the mint price is higher than the redemption price;
                     // in this case, we need to reduce IRMA in circulation by the irma_amount.
                     // Note that this keeps price differences the same (it's minting that adjusts redemption price).
@@ -344,15 +343,15 @@ pub mod irmamod {
                     // redemption price) goes down faster than if we also reduced IRMA in circulation. 
                     // And we're done!
                 }
-                msg!("New reserve for {}: {}", quote_token.to_string(), *reserve);
-                let ro_circulation: u64 = self.irma_in_circulation[quote_token as usize];
-                msg!("New circulation for {}: {}", quote_token.to_string(), ro_circulation);
+                // msg!("New reserve for {}: {}", quote_token.to_string(), *reserve);
+                // let ro_circulation: u64 = self.irma_in_circulation[quote_token as usize];
+                // msg!("New circulation for {}: {}", quote_token.to_string(), ro_circulation);
                 return Ok(());
             }
             // All the following code is for the semi-normal case, in which the mint price 
             // is higher than or equal to the redemption price; but the price differences
             // can be large.
-            // msg!("First target for normal adjustments: {}", other_target.to_string());
+            // msg!("Other target for normal adjustments: {}", other_target.to_string());
 
             let other_circulation: u64 = self.irma_in_circulation[other_target as usize];
 
@@ -382,7 +381,7 @@ pub mod irmamod {
             if post_other_price_diff <= post_price_diff {
                 // msg!("--> Post other price diff is less than or equal to second price diff, 
                 //         adjusting other circulation only.");
-                // if irma_amount is such that it would reduce discrepancy for first stablecoin more post 
+                // if irma_amount is such that it would reduce discrepancy for other stablecoin more post 
                 // adjustment, we can choose to subtract irma_amount from the other_circulation only
                 require!(irma_amount <= other_circulation, CustomError::InsufficientCirculation);
                 let other_circulation = self.irma_in_circulation.get_mut(other_target as usize).unwrap();
