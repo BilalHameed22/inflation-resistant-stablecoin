@@ -1,19 +1,22 @@
 
 #[cfg(test)]
 mod tests {
-    // use anchor_lang::accounts::program;
     use anchor_lang::prelude::*;
     use anchor_lang::prelude::Pubkey;
-    use anchor_lang::solana_program::system_program;
+    use solana_sdk_ids::system_program;
     use anchor_lang::prelude::Signer;
-    use anchor_lang::prelude::Account;
+    // use anchor_lang::prelude::Account;
     use anchor_lang::prelude::Program;
     use anchor_lang::context::Context;
-    use irma::irmamod::CustomError;
-    use irma::BACKING_COUNT;
-    use irma::irmamod::{self, Stablecoins, State}; //, CustomError};
-    use irma::irmamod::{initialize, set_mint_price, mint_irma, redeem_irma};
+    // use bytemuck::bytes_of_mut;
+    // use anchor_lang::Discriminator;
+    use irma_program::pricing::CustomError;
+    use irma_program::pricing::BACKING_COUNT;
+    use irma_program::pricing::{Stablecoins, State, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
+    use irma_program::pricing::{initialize, set_mint_price, mint_irma, redeem_irma, BUMP_VALUE};
+    use irma_program::pricing::Stablecoins::EnumCount;
 
+    
     fn allocate_state() -> State {
         State {
             mint_price: Vec::<f64>::with_capacity(Stablecoins::EnumCount as usize),

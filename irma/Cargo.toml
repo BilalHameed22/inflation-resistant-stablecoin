@@ -4,10 +4,26 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+anchor-client = "0.31.1"
+anchor-lang = "0.31.1"
+# anchor-spl = "0.31.1"
+fixed = { git = "https://github.com/blockworks-foundation/fixed.git", branch = "v1.11.0-borsh0_10-mango" }
+# pyth-sdk-solana = "0.10.1"
+# solana-account-decoder = "~1.17.1"
+# solana-client = "~1.17.1"
+# solana-logger = "~1.17.1"
+# solana-program = "2.3.0"
+# solana-program-test = "~1.17.1"
+# solana-rpc = "~1.17.1"
+solana-sdk = "2.3.0"
+spl-associated-token-account = "1.0.3"
+
 [profile.release]
 overflow-checks = true
 lto = "fat"
 codegen-units = 1
+
 [profile.release.build-override]
 opt-level = 3
 incremental = false
