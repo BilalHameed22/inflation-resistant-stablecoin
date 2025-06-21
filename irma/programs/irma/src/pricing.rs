@@ -126,7 +126,7 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
     Ok(())
 }
 
-pub fn hello(ctx: Context<SetMintPrice>) -> Result<()> {
+pub fn hello(ctx: Context<IrmaCommon>) -> Result<()> {
     let state = &mut ctx.accounts.state;
     if state.mint_price.len() == 0 {
         state.mint_price = vec![1.0; BACKING_COUNT];
@@ -141,10 +141,10 @@ pub fn hello(ctx: Context<SetMintPrice>) -> Result<()> {
     Ok(())
 }
 
-/// SetMintPrice of IRMA expressed in terms of a given quote token.
+/// IrmaCommon of IRMA expressed in terms of a given quote token.
 /// This should be called for every backing stablecoin supported, only once per day
 /// because Truflation updates the inflation data only once per day.
-pub fn set_mint_price(ctx: Context<SetMintPrice>, quote_token: Stablecoins, mint_price: f64) -> Result<()> {
+pub fn set_mint_price(ctx: Context<IrmaCommon>, quote_token: Stablecoins, mint_price: f64) -> Result<()> {
     let state = &mut ctx.accounts.state;
     require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
     
@@ -156,7 +156,7 @@ pub fn set_mint_price(ctx: Context<SetMintPrice>, quote_token: Stablecoins, mint
 
 /// Mint IRMA tokens for a given amount of quote token.
 /// FIXME: Currently assumes that decimal point is zero digits for both IRMA and quote token.
-pub fn mint_irma(ctx: Context<MintIrma>, quote_token: Stablecoins, amount: u64) -> Result<()> {
+pub fn mint_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, amount: u64) -> Result<()> {
     require!(amount > 0, CustomError::InvalidAmount);
 
     let state: &mut Account<'_, State> = &mut ctx.accounts.state;
@@ -182,7 +182,7 @@ pub fn mint_irma(ctx: Context<MintIrma>, quote_token: Stablecoins, amount: u64) 
 /// RedeemIRMA - user surrenders IRMA in irma_amount, expecting to get back quote_token according to redemption price.
 /// FIXME: If resulting redemption price increases by more than 0.0000001, then actual redemption price 
 /// should be updated immediately.
-pub fn redeem_irma(ctx: Context<RedeemIrma>, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
+pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
     let state = &mut ctx.accounts.state;
     require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
 
@@ -209,27 +209,7 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-pub struct SetMintPrice<'info> {
-    #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, State>,
-    #[account(mut)]
-    pub trader: Signer<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct MintIrma<'info> {
-    #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, State>,
-    #[account(mut)]
-    pub trader: Signer<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct RedeemIrma<'info> {
+pub struct IrmaCommon<'info> {
     #[account(mut, seeds=[b"state".as_ref()], bump)]
     pub state: Account<'info, State>,
     #[account(mut)]
