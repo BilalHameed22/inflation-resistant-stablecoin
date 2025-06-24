@@ -12,8 +12,7 @@ mod tests {
     // use anchor_lang::Discriminator;
     use irma_program::IRMA_ID;
     use irma_program::pricing::CustomError;
-    use irma_program::pricing::BACKING_COUNT;
-    use irma_program::pricing::{StateMap, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
+    use irma_program::pricing::{StateMap, StableState, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
     use irma_program::pricing::{initialize, set_mint_price, mint_irma, redeem_irma};
     use irma_program::pricing::MAX_BACKING_COUNT;
 
@@ -24,7 +23,9 @@ mod tests {
 
     fn init_state() -> StateMap {
         let mut state: StateMap = allocate_state();
-        let mut reserves = &mut state.reserves;
+        let reserves = &mut state.reserves;
+        let usdt: StableState = StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6 as u64).unwrap();
+        reserves.insert("USDT".to_string(), usdt);
         assert_eq!(reserves.len(), 0);
         state
     }
@@ -32,63 +33,72 @@ mod tests {
     #[test]
     fn test_set_state_directly() {
         let mut state: StateMap = init_state();
-        let quote_token: Stablecoins = Stablecoins::USDT;
+        let quote_token: &str = "USDT";
         let new_price: f64 = 1.23;
-        state.mint_price[quote_token as usize] = 1.0;
-        assert_eq!(state.mint_price[quote_token as usize], 1.0);
-        state.mint_price[quote_token as usize] = new_price;
-        assert_eq!(state.mint_price[quote_token as usize], new_price);
+        let reserves = &mut state.reserves;
+        let mut_reserve = reserves.get_mut(quote_token).unwrap();
+        mut_reserve.mint_price = 1.0;
+        mut_reserve.mint_price = new_price;
+        let reserves = state.reserves;
+        assert_eq!(reserves[quote_token].mint_price, 1.0);
+        assert_eq!(reserves[quote_token].mint_price, new_price);
     }
 
     #[test]
     fn test_mint_irma_directly() {
         let mut state = init_state();
-        let quote_token = Stablecoins::USDT;
+        let reserves = &mut state.reserves;
+        let quote_token = "USDT";
         let amount = 100;
-        let price = state.mint_price[quote_token as usize];
-        let prev_circulation = state.irma_in_circulation[quote_token as usize];
-        let prev_reserve = state.backing_reserves[quote_token as usize];
+        let price = reserves[quote_token].mint_price;
+        let prev_circulation = reserves[quote_token].irma_in_circulation;
+        let prev_reserve = reserves[quote_token].backing_reserves;
         // Simulate mint_irma logic
-        state.backing_reserves[quote_token as usize] += amount;
-        state.irma_in_circulation[quote_token as usize] += (amount as f64 / price).ceil() as u64;
-        assert_eq!(state.backing_reserves[quote_token as usize], prev_reserve + amount);
-        assert_eq!(state.irma_in_circulation[quote_token as usize], prev_circulation + (amount as f64 / price).ceil() as u64);
+        let mut_reserve = reserves.get_mut(quote_token).unwrap();
+        mut_reserve.backing_reserves += amount;
+        mut_reserve.irma_in_circulation += (amount as f64 / price).ceil() as u64;
+        assert_eq!(reserves[quote_token].backing_reserves, prev_reserve + amount);
+        assert_eq!(reserves[quote_token].irma_in_circulation, prev_circulation + (amount as f64 / price).ceil() as u64);
     }
 
     #[test]
     fn test_redeem_irma_simple() {
         let mut state = init_state();
-        let quote_token = Stablecoins::USDT;
+        let reserves = &mut state.reserves;
+        let quote_token = "USDT";
         let irma_amount = 10;
-        let prev_circulation = state.irma_in_circulation[quote_token as usize];
+        let prev_circulation = reserves[quote_token].irma_in_circulation;
         // Simulate redeem_irma logic (simple case)
-        state.irma_in_circulation[quote_token as usize] -= irma_amount;
-        assert_eq!(state.irma_in_circulation[quote_token as usize], prev_circulation - irma_amount);
+        let mut_reserve = reserves.get_mut(quote_token).unwrap();
+        mut_reserve.irma_in_circulation -= irma_amount;
+        assert_eq!(reserves[quote_token].irma_in_circulation, prev_circulation - irma_amount);
     }
 
     #[test]
     fn test_reduce_circulations_logic() {
         let mut state = init_state();
-        // Manipulate state to create a price difference
-        state.mint_price[Stablecoins::USDT as usize] = 2.0;
-        state.backing_reserves[Stablecoins::USDT as usize] = 1000;
-        state.irma_in_circulation[Stablecoins::USDT as usize] = 100;
-        // Should select USDT as first_target
-        let quote_token = Stablecoins::USDT;
+        let reserves = &mut state.reserves;
         let irma_amount = 5;
-        let prev_circulation = state.irma_in_circulation[quote_token as usize];
-        // Simulate reduce_circulations logic (first_target == quote_token)
-        state.irma_in_circulation[quote_token as usize] -= irma_amount;
-        assert_eq!(state.irma_in_circulation[quote_token as usize], prev_circulation - irma_amount);
+        {
+            // Manipulate state to create a price difference
+            let mut_reserve = reserves.get_mut("USDT").unwrap();
+            mut_reserve.mint_price = 2.0;
+            mut_reserve.backing_reserves = 1000;
+            mut_reserve.irma_in_circulation = 100;
+            mut_reserve.irma_in_circulation -= irma_amount;
+        }
+        let prev_circulation = reserves["USDT"].irma_in_circulation;
+        assert_eq!(reserves["USDT"].irma_in_circulation, prev_circulation - irma_amount);
     }
 
     fn prep_accounts(owner: &'static Pubkey, state_account: Pubkey) -> (AccountInfo<'static>, AccountInfo<'static>, AccountInfo<'static>) {
         // Create a buffer for StateMap and wrap it in AccountInfo
-        let lamports: &'static mut u64 = Box::leak(Box::new(100000u64));
-        let state: StateMap = allocate_state();
+        let lamports: &mut u64 = Box::leak(Box::new(100000u64));
+        let mut state: StateMap = allocate_state();
+        let _ = state.add_initial_stablecoins(); // Add initial stablecoins to the state
 
         // Prepare the account data with the correct discriminator
-        let mut state_data_vec: Vec<u8> = Vec::with_capacity(1024);
+        let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
         state.try_serialize(&mut state_data_vec).unwrap();
 
         let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
@@ -211,7 +221,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        let mut result: std::result::Result<(), Error> = set_mint_price(ctx, Stablecoins::USDT, 1.5);
+        let mut result: std::result::Result<(), Error> = set_mint_price(ctx, "USDT", 1.5);
         assert!(result.is_ok());
         // Re-create ctx for the next call if needed
         ctx = Context::new(
@@ -220,7 +230,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = set_mint_price(ctx, Stablecoins::USDC, 1.8);
+        result = set_mint_price(ctx, "USDC", 1.8);
         assert!(result.is_ok());
         ctx = Context::new(
             program_id,
@@ -228,11 +238,11 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = set_mint_price(ctx, Stablecoins::FDUSD, 1.3);
+        result = set_mint_price(ctx, "FDUSD", 1.3);
         assert!(result.is_ok());
-        msg!("Mint price for USDT set successfully: {:?}", accounts.state.mint_price[Stablecoins::USDT as usize]);
-        msg!("Mint price for USDC set successfully: {:?}", accounts.state.mint_price[Stablecoins::USDC as usize]);
-        msg!("Mint price for USDE set successfully: {:?}", accounts.state.mint_price[Stablecoins::FDUSD as usize]);
+        // msg!("Mint price for USDT set successfully: {:?}", accounts.state.mint_price["USDT" as usize]);
+        // msg!("Mint price for USDC set successfully: {:?}", accounts.state.mint_price[Stablecoins::USDC as usize]);
+        // msg!("Mint price for USDE set successfully: {:?}", accounts.state.mint_price[Stablecoins::FDUSD as usize]);
     }
 
     #[test]
@@ -251,19 +261,19 @@ mod tests {
             system_program: sys_account.clone(),
         };
         msg!("Pre-mint IRMA state:");
-        msg!("Backing reserves for USDT: {:?}", accounts.state.backing_reserves[Stablecoins::USDT as usize]);
-        msg!("Backing reserves for PYUSD: {:?}", accounts.state.backing_reserves[Stablecoins::PYUSD as usize]);
-        msg!("Backing reserves for USDG: {:?}", accounts.state.backing_reserves[Stablecoins::USDG as usize]);
-        msg!("IRMA in circulation for USDT: {:?}", accounts.state.irma_in_circulation[Stablecoins::USDT as usize]);
-        msg!("IRMA in circulation for PYUSD: {:?}", accounts.state.irma_in_circulation[Stablecoins::PYUSD as usize]);
-        msg!("IRMA in circulation for USDG: {:?}", accounts.state.irma_in_circulation[Stablecoins::USDG as usize]);
+        msg!("Backing reserves for USDT: {:?}", accounts.state.reserves["USDT"].backing_reserves);
+        msg!("Backing reserves for PYUSD: {:?}", accounts.state.reserves["PYUSD"].backing_reserves);
+        msg!("Backing reserves for USDG: {:?}", accounts.state.reserves["USDG"].backing_reserves);
+        msg!("IRMA in circulation for USDT: {:?}", accounts.state.reserves["USDT"].irma_in_circulation);
+        msg!("IRMA in circulation for PYUSD: {:?}", accounts.state.reserves["PYUSD"].irma_in_circulation);
+        msg!("IRMA in circulation for USDG: {:?}", accounts.state.reserves["USDG"].irma_in_circulation);
         let mut ctx: Context<IrmaCommon> = Context::new(
             program_id,
             &mut accounts,
             &[],
             IrmaCommonBumps::default(),
         );
-        let mut result = mint_irma(ctx, Stablecoins::USDT, 100);
+        let mut result = mint_irma(ctx, "USDT", 100);
         match result {
             Err(e) => {
                 msg!("Error minting IRMA for USDT: {:?}", e);
@@ -278,7 +288,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = mint_irma(ctx, Stablecoins::PYUSD, 1000);
+        result = mint_irma(ctx, "PYUSD", 1000);
         match result {
             Err(e) => {
                 msg!("Error minting IRMA for PYUSD: {:?}", e);
@@ -293,7 +303,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = mint_irma(ctx, Stablecoins::USDG, 10000);
+        result = mint_irma(ctx, "USDG", 10000);
         match result {
             Err(e) => {
                 msg!("Error minting IRMA for USDG: {:?}", e);
@@ -304,12 +314,12 @@ mod tests {
         }
         msg!("-------------------------------------------------------------------------");
         msg!("Post-mint IRMA state:");
-        msg!("Backing reserves for USDT: {:?}", accounts.state.backing_reserves[Stablecoins::USDT as usize]);
-        msg!("Backing reserves for PYUSD: {:?}", accounts.state.backing_reserves[Stablecoins::PYUSD as usize]);
-        msg!("Backing reserves for USDG: {:?}", accounts.state.backing_reserves[Stablecoins::USDG as usize]);
-        msg!("IRMA in circulation for USDT: {:?}", accounts.state.irma_in_circulation[Stablecoins::USDT as usize]);
-        msg!("IRMA in circulation for PYUSD: {:?}", accounts.state.irma_in_circulation[Stablecoins::PYUSD as usize]);
-        msg!("IRMA in circulation for USDG: {:?}", accounts.state.irma_in_circulation[Stablecoins::USDG as usize]);
+        msg!("Backing reserves for USDT: {:?}", accounts.state.reserves["USDT"].backing_reserves);
+        msg!("Backing reserves for PYUSD: {:?}", accounts.state.reserves["PYUSD"].backing_reserves);
+        msg!("Backing reserves for USDG: {:?}", accounts.state.reserves["USDG"].backing_reserves);
+        msg!("IRMA in circulation for USDT: {:?}", accounts.state.reserves["USDT"].irma_in_circulation);
+        msg!("IRMA in circulation for PYUSD: {:?}", accounts.state.reserves["PYUSD"].irma_in_circulation);
+        msg!("IRMA in circulation for USDG: {:?}", accounts.state.reserves["USDG"].irma_in_circulation);
     }
 
 
@@ -328,27 +338,32 @@ mod tests {
         };
         msg!("Pre-redeem IRMA state:");
         let state: &mut StateMap = &mut accounts.state;
-        for i in 0..BACKING_COUNT {
-            let reserve: &mut u64 = &mut state.backing_reserves[i];
-            let circulation: &mut u64 = &mut state.irma_in_circulation[i];
-            if state.backing_decimals[i as usize] == 0 {
-                require!(*reserve == 0, CustomError::InvalidBacking);
-                require!(*circulation == 1, CustomError::InvalidIrmaAmount);
+        let reserves = state.reserves.clone();
+        let keys: Vec<String> = reserves.keys().cloned().collect();
+        for sc in keys {
+            msg!("Backing reserves for {}: {:?}", sc, reserves[&sc].backing_reserves);
+            if reserves[&sc].backing_decimals == 0 {
+                // require!(*reserve == 0, CustomError::InvalidBacking);
+                // require!(*circulation == 1, CustomError::InvalidIrmaAmount);
                 continue; // skip non-existent stablecoins
             }
+            let mut_reserves = &mut state.reserves;
+            let mut_backing = mut_reserves.get_mut(&sc).unwrap();
+            let reserve: &mut u64 = &mut mut_backing.backing_reserves;
+            let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
             *reserve = 1000000; // Set a large reserve for testing
             *circulation = 100000; // Set a large IRMA in circulation for testing
         }
-        msg!("Current prices: {:?}", accounts.state.mint_price);
-        msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
-        msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
+        // msg!("Current prices: {:?}", accounts.state.mint_price);
+        // msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
+        // msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
         let mut ctx: Context<IrmaCommon> = Context::new(
             program_id,
             &mut accounts,
             &[],
             IrmaCommonBumps::default(),
         );
-        let mut result: std::result::Result<(), Error> = redeem_irma(ctx, Stablecoins::USDC, 10);
+        let mut result: std::result::Result<(), Error> = redeem_irma(ctx, "USDC", 10);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for USDC: {:?}", e);
@@ -364,7 +379,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = redeem_irma(ctx, Stablecoins::USDT, 20);
+        result = redeem_irma(ctx, "USDT", 20);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for USDT: {:?}", e);
@@ -379,7 +394,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = redeem_irma(ctx, Stablecoins::PYUSD, 30);
+        result = redeem_irma(ctx, "PYUSD", 30);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for PYUSD: {:?}", e);
@@ -394,7 +409,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = redeem_irma(ctx, Stablecoins::USDG, 40);
+        result = redeem_irma(ctx, "USDG", 40);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for USDG: {:?}", e);
@@ -409,7 +424,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = redeem_irma(ctx, Stablecoins::FDUSD, 50);
+        result = redeem_irma(ctx, "FDUSD", 50);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for FDUSD: {:?}", e);
@@ -426,9 +441,9 @@ mod tests {
         );
 
         msg!("Mid-state for USDT before further redemption: {:?}", 
-            state_account.backing_reserves[Stablecoins::USDT as usize]);
+            state_account.reserves["USDT"].backing_reserves);
         // Test for near maximum redemption
-        result = redeem_irma(ctx, Stablecoins::USDT, 10_000);
+        result = redeem_irma(ctx, "USDT", 10_000);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for USDT: {:?}", e);
@@ -443,7 +458,7 @@ mod tests {
             &[],
             IrmaCommonBumps::default(),
         );
-        result = redeem_irma(ctx, Stablecoins::USDS, 10);
+        result = redeem_irma(ctx, "USDS", 10);
         match result {
             Err(e) => {
                 msg!("Error redeeming IRMA for USDS: {:?}", e);
@@ -454,8 +469,7 @@ mod tests {
         }
         msg!("-------------------------------------------------------------------------");
         msg!("Redeem IRMA successful:");
-        msg!("Backing reserves for USDT: {:?}", accounts.state.backing_reserves);
-        msg!("IRMA in circulation for USDT: {:?}", accounts.state.irma_in_circulation);
+        msg!("Backing reserves for USDT: {:?}", accounts.state.reserves);
         Ok(())
     }
 
@@ -473,24 +487,53 @@ mod tests {
             trader: irma_admin_account.clone(),
             system_program: sys_account.clone(),
         };
-        msg!("Pre-redeem IRMA state:");
-        let state: &mut StateMap = &mut accounts.state;
-        for i in 0..BACKING_COUNT {
-            let reserve: &mut u64 = &mut state.backing_reserves[i];
-            let circulation: &mut u64 = &mut state.irma_in_circulation[i];
-            let price: &mut f64 = &mut state.mint_price[i];
-            if state.backing_decimals[i as usize] == 0 {
-                require!(*reserve == 0, CustomError::InvalidBacking);
-                require!(*circulation == 1, CustomError::InvalidIrmaAmount);
-                continue; // skip non-existent stablecoins
+        // {
+        //     msg!("Pre-redeem IRMA state:");
+        //     let state: &mut StateMap = &mut accounts.state;
+        //     let reserves = state.reserves.clone();
+        //     let keys: Vec<String> = reserves.keys().cloned().collect();
+        //     for sc in keys {
+        //         msg!("Backing reserves for {}: {:?}", sc, reserves[sc].backing_reserves);
+        //         if reserves[sc].backing_decimals == 0 {
+        //             // require!(*reserve == 0, CustomError::InvalidBacking);
+        //             // require!(*circulation == 1, CustomError::InvalidIrmaAmount);
+        //             continue; // skip non-existent stablecoins
+        //         }
+        //         let mut_backing = state.reserves.get_mut(&sc).unwrap();
+        //         let reserve: &mut u64 = &mut mut_backing.backing_reserves;
+        //         let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
+        //         let price: &mut f64 = &mut mut_backing.mint_price;
+        //         *reserve = 1000000; // Set a large reserve for testing
+        //         *circulation = 100000; // Set a large IRMA in circulation for testing
+        //         *price = 2.0; // Set a price for testing
+        //     }
+        // }
+        {
+            msg!("Pre-redeem IRMA state:");
+            let state: &mut StateMap = &mut accounts.state;
+            let reserves = state.reserves.clone();
+            let keys: Vec<String> = reserves.keys().cloned().collect();
+            let mut i: u64 = 0;
+            for sc in keys {
+                msg!("Backing reserves for {}: {:?}", sc, reserves[&sc].backing_reserves);
+                if reserves[&sc].backing_decimals == 0 {
+                    require!(reserves[&sc].active == false, CustomError::InvalidBacking);
+                    // require!(*circulation == 1, CustomError::InvalidIrmaAmount);
+                    continue; // skip non-existent stablecoins
+                }
+                let mut_backing = state.reserves.get_mut(&sc).unwrap();
+                let reserve: &mut u64 = &mut mut_backing.backing_reserves;
+                let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
+                let price: &mut f64 = &mut mut_backing.mint_price;
+                *reserve = 9_900_000_000; // Set a large reserve for testing
+                *circulation = 10_000_000_000; // Set a large IRMA in circulation for testing
+                *price = (i as f64 + 1.0) * (i as f64 + 1.0); // Set a price for testing
+                i += 1;
             }
-            *reserve = 9_900_000_000; // Set a large reserve for testing
-            *circulation = 10_000_000_000; // Set a large IRMA in circulation for testing
-            *price = (i as f64 + 1.0) * (i as f64 + 1.0); // Set a price for testing
         }
-        msg!("Current prices: {:?}", accounts.state.mint_price);
-        msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
-        msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
+        // msg!("Current prices: {:?}", accounts.state.mint_price);
+        // msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
+        // msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
         let mut ctx: Context<IrmaCommon> = Context::new(
             program_id,
             &mut accounts,
@@ -501,7 +544,7 @@ mod tests {
         // Test for near maximum redemption, multiple times, until it fails.
         // What we expect is that these repeated redemptions will equalize the differences between
         // mint prices and redemptions prices for all stablecoins.
-        let mut reslt = redeem_irma(ctx, Stablecoins::USDT, 100_000);
+        let mut reslt = redeem_irma(ctx, "USDT", 100_000);
         while reslt.is_ok() {
             ctx = Context::new(
                 program_id,
@@ -509,7 +552,7 @@ mod tests {
                 &[],
                 IrmaCommonBumps::default(), // Use default bumps if not needed
             );
-            reslt = redeem_irma(ctx, Stablecoins::USDT, 100_000);
+            reslt = redeem_irma(ctx, "USDT", 100_000_000_000);
             match reslt {
                 Err(e) => {
                     msg!("Error redeeming IRMA for USDT: {:?}", e);
@@ -522,15 +565,16 @@ mod tests {
 
             // Print the current state after every ten redemptions
             if count % 10 == 0 {
-                let state: &StateMap = &accounts.state;
-                for i in 0..BACKING_COUNT {
-                    let reserve: u64 = state.backing_reserves[i as usize];
-                    let circulation: u64 = state.irma_in_circulation[i as usize];
-                    let redemption_price: f64 = reserve as f64 / circulation as f64;
+                let reserves = &accounts.state.reserves;
+                let keys: Vec<String> = reserves.keys().cloned().collect();
+                for sc in keys {
+                    let backing: u64 = reserves[&sc].backing_reserves;
+                    let circulation: u64 = reserves[&sc].irma_in_circulation;
+                    let redemption_price: f64 = backing as f64 / circulation as f64;
                     msg!("{}, {:.3}, {}, {}, {:.3}", 
-                        Stablecoins::from_index(i).to_string(), 
-                        state.mint_price[i as usize], 
-                        reserve,
+                        sc, 
+                        reserves[&sc].mint_price, 
+                        backing,
                         circulation,
                         redemption_price);
                 }
@@ -539,10 +583,10 @@ mod tests {
             count += 1;
         }
 
-        msg!("-------------------------------------------------------------------------");
-        msg!("Redeem IRMA successful:");
-        msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
-        msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
+        // msg!("-------------------------------------------------------------------------");
+        // msg!("Redeem IRMA successful:");
+        // msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
+        // msg!("IRMA in circulation: {:?}", accounts.state.irma_in_circulation);
         Ok(())
     }
 }
