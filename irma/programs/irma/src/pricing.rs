@@ -30,61 +30,9 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
     state.bump = 13u8; // InitializeBumps::bump(&ctx.bumps).unwrap_or(0);
     msg!("State initialized with bump: {}", state.bump);
 
-    //     symbol: Box::new(symbols[0].to_string()), // symbol of the stablecoin, e.g. "USDT"
-    //     mint_address: pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
-    let usdt = StableState::new(
-        "USDT",
-        pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(usdt);
+    state.add_initial_stablecoins()?;
+    msg!("Initial stablecoins added to the state.");
 
-    //     symbol: Box::new(symbols[1].to_string()), // symbol of the stablecoin, e.g. "USDC"
-    //     mint_address: pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC mint address on Solana
-    let usdc = StableState::new(
-        "USDC",
-        pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(usdc);
-
-    //     symbol: Box::new(symbols[2].to_string()),
-    //     mint_address: pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // PYUSD mint address on Solana
-    let pyusd = StableState::new(
-        "PYUSD",
-        pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(pyusd);
-
-    //     symbol: Box::new(symbols[3].to_string()),
-    //     mint_address: pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDS mint address on Solana
-    let usds = StableState::new(
-        "USDS",
-        pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(usds);
-
-    //     symbol: Box::new(symbols[4].to_string()),
-    //     mint_address: pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDG mint address on Solana
-    let usdg = StableState::new(
-        "USDG",
-        pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(usdg);
-
-    //     symbol: Box::new(symbols[5].to_string()),
-    //     mint_address: pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // FDUSD mint address on Solana
-    let fdusd = StableState::new(
-        "FDUSD",
-        pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // USDT mint address on Solana
-        6,
-    )?;
-    state.add_stablecoin(fdusd);
-
-    msg!("BTreeMap length: {:?}", state.reserves.len());
     Ok(())
 }
 
@@ -327,6 +275,86 @@ impl StateMap {
     pub fn len(&self) -> usize {
         self.reserves.len()
     }
+
+    pub fn add_initial_stablecoins(&mut self) -> Result<()> {
+        // This function is used to add initial stablecoins to the reserves.
+        // It is called during the initialization of the IRMA program.
+        // let usdt = StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6)?;
+        // self.add_stablecoin(usdt);
+        
+        // let usdc = StableState::new("USDC", pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), 6)?;
+        // self.add_stablecoin(usdc);
+        
+        // let pyusd = StableState::new("PYUSD", pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), 6)?;
+        // self.add_stablecoin(pyusd);
+        
+        // let usds = StableState::new("USDS", pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), 6)?;
+        // self.add_stablecoin(usds);
+        
+        // let usdg = StableState::new("USDG", pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), 6)?;
+        // self.add_stablecoin(usdg);
+        
+        // let fdusd = StableState::new("FDUSD", pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), 6)?;
+        // self.add_stablecoin(fdusd);
+
+        // Ok(())
+        //     symbol: Box::new(symbols[0].to_string()), // symbol of the stablecoin, e.g. "USDT"
+        //     mint_address: pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
+        let usdt = StableState::new(
+            "USDT",
+            pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(usdt);
+
+        //     symbol: Box::new(symbols[1].to_string()), // symbol of the stablecoin, e.g. "USDC"
+        //     mint_address: pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC mint address on Solana
+        let usdc = StableState::new(
+            "USDC",
+            pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(usdc);
+
+        //     symbol: Box::new(symbols[2].to_string()),
+        //     mint_address: pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // PYUSD mint address on Solana
+        let pyusd = StableState::new(
+            "PYUSD",
+            pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(pyusd);
+
+        //     symbol: Box::new(symbols[3].to_string()),
+        //     mint_address: pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDS mint address on Solana
+        let usds = StableState::new(
+            "USDS",
+            pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(usds);
+
+        //     symbol: Box::new(symbols[4].to_string()),
+        //     mint_address: pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDG mint address on Solana
+        let usdg = StableState::new(
+            "USDG",
+            pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(usdg);
+
+        //     symbol: Box::new(symbols[5].to_string()),
+        //     mint_address: pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // FDUSD mint address on Solana
+        let fdusd = StableState::new(
+            "FDUSD",
+            pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // USDT mint address on Solana
+            6,
+        )?;
+        self.add_stablecoin(fdusd);
+
+        msg!("BTreeMap length: {:?}", self.reserves.len());
+        Ok(())
+    }  
 
     /// ReduceCirculations implementation
     /// This now deals with mint_price being less than redemption_price (a period of deflation).
