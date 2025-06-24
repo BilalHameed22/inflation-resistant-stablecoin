@@ -9,6 +9,7 @@
 // };
 // use solana_sdk_ids::system_program;
 // use solana_program::{pubkey, pubkey::Pubkey};
+// use std::ffi::CStr;
 use bytemuck::bytes_of_mut;
 use anchor_lang::prelude::*;
 // use anchor_lang::{declare_id, program};
@@ -37,7 +38,6 @@ declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 pub mod iopenbook;
 pub mod pricing;
 
-use crate::pricing::Stablecoins;
 use crate::pricing::{ /* Initialize, */ IrmaCommon};
 use crate::pricing::{ /* initialize, */ set_mint_price, mint_irma, redeem_irma};
 use crate::iopenbook::{EventHeap, Market, ConsumeEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
@@ -261,15 +261,15 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
 }
 
 #[repr(C)]
-pub enum OpenBookEvent {
+pub enum OpenBookEvent<'a> {
     BuyIRMA {
         trader: Pubkey,
-        quote_token: Stablecoins,
+        quote_token: &'a str,
         amount: u64,
     },
     SellIRMA {
         trader: Pubkey,
-        quote_token: Stablecoins,
+        quote_token: &'a str,
         irma_amount: u64,
     },
 }
@@ -292,7 +292,7 @@ pub fn handle_openbook_event(
 pub fn oracle_inflation_input<'info>(
     ctx: Context<'_, '_, '_, 'info, IrmaCommon<'info>>,
     inflation_percent: f64,
-    stablecoin: Stablecoins,
+    stablecoin: &str,
     stablecoin_price_usd: f64,
 ) -> Result<()> {
     let mint_price = if inflation_percent < 2.0 {

@@ -13,41 +13,25 @@ mod tests {
     use irma_program::IRMA_ID;
     use irma_program::pricing::CustomError;
     use irma_program::pricing::BACKING_COUNT;
-    use irma_program::pricing::{Stablecoins, State, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
+    use irma_program::pricing::{StateMap, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
     use irma_program::pricing::{initialize, set_mint_price, mint_irma, redeem_irma};
-    use irma_program::pricing::Stablecoins::EnumCount;
+    use irma_program::pricing::MAX_BACKING_COUNT;
 
     
-    fn allocate_state() -> State {
-        State {
-            mint_price: Vec::<f64>::with_capacity(Stablecoins::EnumCount as usize),
-            backing_reserves: Vec::<u64>::with_capacity(Stablecoins::EnumCount as usize),
-            irma_in_circulation: Vec::<u64>::with_capacity(Stablecoins::EnumCount as usize),
-            backing_decimals: Vec::<u8>::with_capacity(Stablecoins::EnumCount as usize),
-            bump: 0u8,
-        }
+    fn allocate_state() -> StateMap {
+        StateMap::new()
     }
 
-    fn init_state() -> State {
-        let mut state: State = allocate_state();
-        for i in 0..BACKING_COUNT as usize {
-            state.mint_price.push(1.0); // Initialize with default price
-            state.backing_reserves.push(1000); // Initialize with some reserve
-            state.irma_in_circulation.push(100); // Initialize with some IRMA in circulation
-            state.backing_decimals.push(6); // Assume 6 decimals for stablecoins
-            assert_eq!(1.0, state.mint_price[i]);
-        }
-        assert_eq!(state.mint_price.len(), BACKING_COUNT);
-        assert_eq!(state.backing_reserves.len(), BACKING_COUNT);
-        assert_eq!(state.irma_in_circulation.len(), BACKING_COUNT);
-        assert_eq!(state.backing_decimals.len(), BACKING_COUNT);
-        assert_eq!(state.bump, 0u8);
+    fn init_state() -> StateMap {
+        let mut state: StateMap = allocate_state();
+        let mut reserves = &mut state.reserves;
+        assert_eq!(reserves.len(), 0);
         state
     }
 
     #[test]
     fn test_set_state_directly() {
-        let mut state: State = init_state();
+        let mut state: StateMap = init_state();
         let quote_token: Stablecoins = Stablecoins::USDT;
         let new_price: f64 = 1.23;
         state.mint_price[quote_token as usize] = 1.0;
@@ -99,9 +83,9 @@ mod tests {
     }
 
     fn prep_accounts(owner: &'static Pubkey, state_account: Pubkey) -> (AccountInfo<'static>, AccountInfo<'static>, AccountInfo<'static>) {
-        // Create a buffer for State and wrap it in AccountInfo
+        // Create a buffer for StateMap and wrap it in AccountInfo
         let lamports: &'static mut u64 = Box::leak(Box::new(100000u64));
-        let state: State = allocate_state();
+        let state: StateMap = allocate_state();
 
         // Prepare the account data with the correct discriminator
         let mut state_data_vec: Vec<u8> = Vec::with_capacity(1024);
@@ -109,7 +93,7 @@ mod tests {
 
         let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
         let state_key: &'static mut Pubkey = Box::leak(Box::new(state_account));
-        // msg!("State pre-test account data: {:?}", state_data);
+        // msg!("StateMap pre-test account data: {:?}", state_data);
         let state_account_info: AccountInfo<'static> = AccountInfo::new(
             state_key,
             false, // is_signer
@@ -120,8 +104,8 @@ mod tests {
             false,
             0,
         );
-        // msg!("State account created: {:?}", state_account_info.key);
-        // msg!("State owner: {:?}", owner);
+        // msg!("StateMap account created: {:?}", state_account_info.key);
+        // msg!("StateMap owner: {:?}", owner);
         // Use a mock Signer for testing purposes
         let signer_pubkey: &'static mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
         let lamportsx: &'static mut u64 = Box::leak(Box::new(0u64));
@@ -154,7 +138,7 @@ mod tests {
         (state_account_info, signer_account_info, sys_account_info)
     }
 
-    fn initialize_anchor(program_id: &'static Pubkey) -> (Account<'static, State>, Signer<'static>, Program<'static, anchor_lang::system_program::System>) {
+    fn initialize_anchor(program_id: &'static Pubkey) -> (Account<'static, StateMap>, Signer<'static>, Program<'static, anchor_lang::system_program::System>) {
         //                 state_account_info: &'static AccountInfo<'static>) {
         //                 sys_account_info: &AccountInfo<'static>) {
         // let program_id: &'static Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
@@ -178,7 +162,7 @@ mod tests {
         );
         let result: std::result::Result<(), Error> = initialize(ctx);
         assert!(result.is_ok());
-        msg!("State account: {:?}", accounts.state);
+        msg!("StateMap account: {:?}", accounts.state);
         return (accounts.state, accounts.irma_admin, accounts.system_program);
     }
 
@@ -204,7 +188,7 @@ mod tests {
         );
         let result: std::result::Result<(), Error> = initialize(ctx);
         assert!(result.is_ok());
-        msg!("State account initialized successfully: {:?}", accounts.state);
+        msg!("StateMap account initialized successfully: {:?}", accounts.state);
     }
 
     #[test]
@@ -343,7 +327,7 @@ mod tests {
             system_program: sys_account.clone(),
         };
         msg!("Pre-redeem IRMA state:");
-        let state: &mut State = &mut accounts.state;
+        let state: &mut StateMap = &mut accounts.state;
         for i in 0..BACKING_COUNT {
             let reserve: &mut u64 = &mut state.backing_reserves[i];
             let circulation: &mut u64 = &mut state.irma_in_circulation[i];
@@ -490,7 +474,7 @@ mod tests {
             system_program: sys_account.clone(),
         };
         msg!("Pre-redeem IRMA state:");
-        let state: &mut State = &mut accounts.state;
+        let state: &mut StateMap = &mut accounts.state;
         for i in 0..BACKING_COUNT {
             let reserve: &mut u64 = &mut state.backing_reserves[i];
             let circulation: &mut u64 = &mut state.irma_in_circulation[i];
@@ -538,7 +522,7 @@ mod tests {
 
             // Print the current state after every ten redemptions
             if count % 10 == 0 {
-                let state: &State = &accounts.state;
+                let state: &StateMap = &accounts.state;
                 for i in 0..BACKING_COUNT {
                     let reserve: u64 = state.backing_reserves[i as usize];
                     let circulation: u64 = state.irma_in_circulation[i as usize];
