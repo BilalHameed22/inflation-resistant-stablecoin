@@ -1,180 +1,162 @@
 #![allow(unexpected_cfgs)]
 // #![feature(trivial_bounds)]
 // #[cfg(feature = "idl-build")]
-
+use std::collections::BTreeMap;
+// use borsh::{BorshDeserialize, BorshSerialize};
 use anchor_lang::prelude::*;
 use anchor_lang::*;
 
-use crate::Stablecoins::*;
 
-// The number of stablecoins that are currently supported by the IRMA program.
-pub const BACKING_COUNT: usize = Stablecoins::USDE as usize;
+// The number of stablecoins that are initially supported by the IRMA program.
+pub const BACKING_COUNT: usize = 6 as usize;
+// Maximum number of stablecoins supported
+pub const MAX_BACKING_COUNT: usize = 100;
 
 declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 
 /// IRMA module
 /// FIXME: the decimals are all assumed to be zero, which is not true for all stablecoins.
 
-// All currently existing stablecoins with about $100 M in circulation
-// are supported. This list is not exhaustive and will be updated as new
-// stablecoins are added to the market.
-// Initially, we will support only those stablecoins that exist
-// on the Solana blockchain (the first six below). 
-#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq)]
-pub enum Stablecoins {
-    USDT, // <== from Tether, $2.39 B in circulation
-    USDC, // <== from Circle, $8.9 B in circulation
-    USDS, // <== from Sky (previously MakerDAO) #19, $82. M in circulation
-    PYUSD, // <== from PayPal #98, $224 M in circulation
-    USDG, // <== from Singapore #263, $96 M in circulation
-    FDUSD, // <== First Digital USD, $104 M in circulation
-    USDE, // from Ethena #31, $9.9 M in circulation
-    USDP, // from Paxos #551, $1.66 M in circulation
-    SUSD, // from Solayer, has 4 to 5% yield #839, $13.9 M in circulation
-    ZUSD, // from GMO-Z #1165, $8.9 M in circulation
-    USDR, // from StabIR #1884, does not exist on Solana yet
-    DAI,  // thru Wormhole, very low liquidity in Solana
-    USD1,
-    EnumCount
-}
-
-impl Stablecoins {
-    pub fn from_index(index: usize) -> Self {
-        match index {
-            0 => Stablecoins::USDT,
-            1 => Stablecoins::USDC,
-            2 => Stablecoins::USDS,
-            3 => Stablecoins::PYUSD,
-            4 => Stablecoins::USDG,
-            5 => Stablecoins::FDUSD,
-            6 => Stablecoins::USDE,
-            7 => Stablecoins::USDP,
-            8 => Stablecoins::SUSD,
-            9 => Stablecoins::ZUSD,
-            10 => Stablecoins::USDR,
-            11 => Stablecoins::DAI,
-            12 => Stablecoins::USD1,
-            _ => Stablecoins::EnumCount,
-        }
-    }
-
-    /// Converts the Stablecoins enum to an index.
-    /// This is not needed because the index is just "Stablecoins::whatever as usize"
-    pub fn to_index(&self) -> usize {
-        self.clone() as usize
-    }
-
-    pub fn to_string(&self) -> String {
-        match self {
-            Stablecoins::USDT => "USDT".to_string(),
-            Stablecoins::USDC => "USDC".to_string(),
-            Stablecoins::USDS => "USDS".to_string(),
-            Stablecoins::PYUSD => "PYUSD".to_string(),
-            Stablecoins::USDG => "USDG".to_string(),
-            Stablecoins::FDUSD => "FDUSD".to_string(),
-            Stablecoins::USDE => "USDE".to_string(),
-            Stablecoins::USDP => "USDP".to_string(),
-            Stablecoins::SUSD => "SUSD".to_string(),
-            Stablecoins::ZUSD => "ZUSD".to_string(),
-            Stablecoins::USDR => "USDR".to_string(),
-            Stablecoins::DAI => "DAI".to_string(),
-            Stablecoins::USD1 => "USD1".to_string(),
-            Stablecoins::EnumCount => "EnumCount".to_string(),
-        }
-    }
-
-    pub fn from_string(s: &str) -> Self {
-        match s {
-            "USDT" => Stablecoins::USDT,
-            "USDC" => Stablecoins::USDC,
-            "USDS" => Stablecoins::USDS,
-            "PYUSD" => Stablecoins::PYUSD,
-            "USDG" => Stablecoins::USDG,
-            "FDUSD" => Stablecoins::FDUSD,
-            "USDE" => Stablecoins::USDE,
-            "USDP" => Stablecoins::USDP,
-            "SUSD" => Stablecoins::SUSD,
-            "ZUSD" => Stablecoins::ZUSD,
-            "USDR" => Stablecoins::USDR,
-            "DAI" => Stablecoins::DAI,
-            "USD1" => Stablecoins::USD1,
-            _ => Stablecoins::EnumCount,
-        }
-    }
-}
-
 
 pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
     msg!("Greetings from: {:?}", ctx.program_id);
-    let state = &mut ctx.accounts.state;
-    if state.mint_price.len() > 0 {
+    let state = &ctx.accounts.state;
+    if state.reserves.len() > 0 {
+        msg!("State already initialized, skipping init...");
         return Ok(());
     }
-    state.mint_price = Vec::<f64>::with_capacity(EnumCount as usize);
-    msg!("Vec capacity: {:?}", state.mint_price.capacity());
-    state.backing_reserves = Vec::<u64>::with_capacity(EnumCount as usize);
-    state.irma_in_circulation = Vec::<u64>::with_capacity(EnumCount as usize);
-    state.backing_decimals = Vec::<u8>::with_capacity(EnumCount as usize);
-    state.mint_price = vec![1.0; BACKING_COUNT];
-    msg!("Vec length: {:?}", state.mint_price.len());
-    state.irma_in_circulation = vec![1; BACKING_COUNT];
-    state.backing_reserves = vec![0; BACKING_COUNT];
-    // USDR and USD1 are not yet in Solana, so we set their decimals to 
-    // the following are also set to 0 (disabled): USDE, USDP, SUSD, ZUSD, and DAI.
-    state.backing_decimals = vec![6, 6, 6, 6, 6, 6, 0, 0, 0, 0, 0, 0, 0];
-    state.bump = 13u8; // Bump seed for the PDA
+    *ctx.accounts.state = StateMap::new();
+    let state = &mut ctx.accounts.state;
+    state.bump = 13u8; // InitializeBumps::bump(&ctx.bumps).unwrap_or(0);
+    msg!("State initialized with bump: {}", state.bump);
+
+    //     symbol: Box::new(symbols[0].to_string()), // symbol of the stablecoin, e.g. "USDT"
+    //     mint_address: pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
+    let usdt = StableState::new(
+        "USDT",
+        pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(usdt);
+
+    //     symbol: Box::new(symbols[1].to_string()), // symbol of the stablecoin, e.g. "USDC"
+    //     mint_address: pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC mint address on Solana
+    let usdc = StableState::new(
+        "USDC",
+        pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(usdc);
+
+    //     symbol: Box::new(symbols[2].to_string()),
+    //     mint_address: pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // PYUSD mint address on Solana
+    let pyusd = StableState::new(
+        "PYUSD",
+        pubkey!("2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(pyusd);
+
+    //     symbol: Box::new(symbols[3].to_string()),
+    //     mint_address: pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDS mint address on Solana
+    let usds = StableState::new(
+        "USDS",
+        pubkey!("USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(usds);
+
+    //     symbol: Box::new(symbols[4].to_string()),
+    //     mint_address: pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDG mint address on Solana
+    let usdg = StableState::new(
+        "USDG",
+        pubkey!("2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(usdg);
+
+    //     symbol: Box::new(symbols[5].to_string()),
+    //     mint_address: pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // FDUSD mint address on Solana
+    let fdusd = StableState::new(
+        "FDUSD",
+        pubkey!("9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u"), // USDT mint address on Solana
+        6,
+    )?;
+    state.add_stablecoin(fdusd);
+
+    msg!("BTreeMap length: {:?}", state.reserves.len());
+    Ok(())
+}
+
+/// The whole purpose for using a BTreeMap is to allow for easy addition of new stablecoins.
+pub fn add_stablecoin(ctx: Context<IrmaCommon>, symbol: &str, mint_address: Pubkey, backing_decimals: u8) -> Result<()> {
+    let state = &mut ctx.accounts.state;
+    if state.reserves.len() >= MAX_BACKING_COUNT {
+        msg!("Maximum number of stablecoins reached.");
+        return Err(error!(CustomError::InvalidBacking));
+    }
+    let stablecoin = StableState::new(symbol, mint_address, backing_decimals as u64).unwrap();
+    state.add_stablecoin(stablecoin.clone());
+    msg!("Added stablecoin: {:?}", stablecoin);
     Ok(())
 }
 
 pub fn hello(ctx: Context<IrmaCommon>) -> Result<()> {
     let state = &mut ctx.accounts.state;
-    if state.mint_price.len() == 0 {
-        state.mint_price = vec![1.0; BACKING_COUNT];
-        state.backing_reserves = vec![0; BACKING_COUNT];
-        state.irma_in_circulation = vec![0; BACKING_COUNT];
+    if state.reserves.len() == 0 {
+        msg!("State not initialized, call initialize first...");
+        return Err(error!(CustomError::InvalidBacking));
     }
-    msg!("State initialized with mint prices: {:?}", state.mint_price);
-    msg!("Backing reserves: {:?}", state.backing_reserves);
-    msg!("Irma in circulation: {:?}", state.irma_in_circulation);
+    let usdt_symbol = "USDT";
+    let usdt = state.get_stablecoin(usdt_symbol).ok_or(CustomError::InvalidQuoteToken)?;
+    msg!("USDT initialized with mint prices: {:?}", usdt.mint_price);
+    msg!("Total USDT reserves: {:?}", usdt.backing_reserves);
+    msg!("Irma in circulation for USDT: {:?}", usdt.irma_in_circulation);
     msg!("Program ID: {:?}", ctx.program_id);
     msg!("Hello world...");
+    Ok(())
+}
+
+fn validate_params(reserves: BTreeMap<String, StableState>, quote_token: &str) -> Result<()> {
+    require!(reserves.len() > 0, CustomError::InvalidReserveList);
+    require!(reserves.contains_key(quote_token), CustomError::InvalidQuoteToken);
+    let stablecoin = reserves.get(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    require!(stablecoin.active, CustomError::InvalidQuoteToken);
+    require!(stablecoin.backing_decimals > 0, CustomError::InvalidQuoteToken);
+    require!(stablecoin.mint_price > 0.0, CustomError::InvalidAmount);
+    require!(stablecoin.backing_reserves >= 0u64, CustomError::InvalidBacking);
+    require!(stablecoin.irma_in_circulation > 0u64, CustomError::InsufficientCirculation);
     Ok(())
 }
 
 /// IrmaCommon of IRMA expressed in terms of a given quote token.
 /// This should be called for every backing stablecoin supported, only once per day
 /// because Truflation updates the inflation data only once per day.
-pub fn set_mint_price(ctx: Context<IrmaCommon>, quote_token: Stablecoins, mint_price: f64) -> Result<()> {
-    let state = &mut ctx.accounts.state;
-    require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
-    
-    let curr_price = state.mint_price.get_mut(quote_token as usize).unwrap();
+pub fn set_mint_price(ctx: Context<IrmaCommon>, quote_token: &str, mint_price: f64) -> Result<()> {
+    let reserves = &mut ctx.accounts.state.reserves;
+    validate_params(reserves.clone(), quote_token)?;
     require!(mint_price > 0.0, CustomError::InvalidAmount);
-    *curr_price = mint_price;
+
+    let stablecoin = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    stablecoin.mint_price = mint_price;
     Ok(())
 }
 
 /// Mint IRMA tokens for a given amount of quote token.
-/// FIXME: Currently assumes that decimal point is zero digits for both IRMA and quote token.
-pub fn mint_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, amount: u64) -> Result<()> {
-    require!(amount > 0, CustomError::InvalidAmount);
+/// Input amount is  in quote token's smallest unit (e.g. 1 USDT = 10^6, 1 USDC = 10^6, etc.)
+/// The mint price is the price of IRMA in terms of the quote token, which is set by the Truflation oracle.
+pub fn mint_irma(ctx: Context<IrmaCommon>, quote_token: &str, amount: u64) -> Result<()> {
+    let reserves = &mut ctx.accounts.state.reserves;
+    validate_params(reserves.clone(), quote_token)?;
 
-    let state: &mut Account<'_, State> = &mut ctx.accounts.state;
-    require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
+    if amount == 0 { return Ok(()); };
 
-    let backing_reserve: &mut u64 = state.backing_reserves.get_mut(quote_token as usize).unwrap();
-    // require!(*backing_reserve > 0, CustomError::InsufficientReserve);
-    *backing_reserve += amount;
+    let curr_price: f64 = reserves[quote_token].mint_price;
+    let amount = (amount as f64 / (10.0_f64).powf(reserves[quote_token].backing_decimals as f64)) as f64;
 
-    let curr_price: &mut f64 = state.mint_price.get_mut(quote_token as usize).unwrap();
-    require!(*curr_price > 0.0, CustomError::MintPriceNotSet);
-
-    let price: f64 = (*curr_price).clone();
-
-    let circulation: &mut u64 = state.irma_in_circulation.get_mut(quote_token as usize).unwrap();
-    require!(*circulation > 0, CustomError::InsufficientCirculation);
-
-    *circulation += (amount as f64 / price).ceil() as u64;
+    let stablecoin = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    stablecoin.backing_reserves += amount.ceil() as u64; // backing should not have a fractional part
+    stablecoin.irma_in_circulation += (amount / curr_price).ceil() as u64;
 
     Ok(())
 }
@@ -182,26 +164,28 @@ pub fn mint_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, amount: u64
 /// RedeemIRMA - user surrenders IRMA in irma_amount, expecting to get back quote_token according to redemption price.
 /// FIXME: If resulting redemption price increases by more than 0.0000001, then actual redemption price 
 /// should be updated immediately.
-pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
-    let state = &mut ctx.accounts.state;
-    require!(state.backing_decimals[quote_token as usize] > 0, CustomError::InvalidQuoteToken);
+pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: &str, irma_amount: u64) -> Result<()> {
+    let reserves = &mut ctx.accounts.state.reserves;
+    validate_params(reserves.clone(), quote_token)?;
 
     if irma_amount == 0 { return Ok(()) };
 
+    let state = reserves[quote_token].clone();
     // There is a redemption rule: every redemption is limited to 100k IRMA or 10% of the IRMA in circulation (for
     // the quote token) whichever is smaller.
-    let circulation: u64 = state.irma_in_circulation[quote_token as usize];
-    require!((irma_amount <= 100_000) && (irma_amount <= circulation / 10), CustomError::InvalidIrmaAmount);
+    let circulation: u64 = state.irma_in_circulation;
+    let irma_amount = (irma_amount as f64 / (10.0_f64).powf(IRMA.backing_decimals as f64)) as f64;
+    require!((irma_amount <= 100_000.0) && (irma_amount <= circulation as f64 / 10.0), CustomError::InvalidIrmaAmount);
 
-    state.reduce_circulations(quote_token, irma_amount)?;
+    ctx.accounts.state.reduce_circulations(quote_token, irma_amount.ceil() as u64)?;
 
     Ok(())
 }
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, space=26*BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, State>,
+    #[account(init, space=120*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+    pub state: Account<'info, StateMap>,
     #[account(mut)]
     pub irma_admin: Signer<'info>,
     #[account(address = system_program::ID)]
@@ -211,108 +195,227 @@ pub struct Initialize<'info> {
 #[derive(Accounts)]
 pub struct IrmaCommon<'info> {
     #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, State>,
+    pub state: Account<'info, StateMap>,
     #[account(mut)]
     pub trader: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
+// #[account]
+// #[derive(InitSpace)]
+// #[derive(Debug)]
+// pub struct State {
+//     #[max_len(BACKING_COUNT)]
+//     pub mint_price: Vec<f64>,
+//     #[max_len(BACKING_COUNT)]
+//     pub backing_reserves: Vec<u64>,
+//     #[max_len(BACKING_COUNT)]
+//     pub backing_decimals: Vec<u8>,
+//     #[max_len(BACKING_COUNT)]
+//     pub irma_in_circulation: Vec<u64>,
+//     pub bump: u8,
+// }
+
+/// Alternative implementation that allows for easy addition of new stablecoins
+/// Each stablecoin struct uses 80 bytes, with estimated 40 bytes for BTreeMap overhead.
 #[account]
-#[derive(InitSpace)]
-#[derive(Debug)]
-pub struct State {
-    #[max_len(BACKING_COUNT)]
-    pub mint_price: Vec<f64>,
-    #[max_len(BACKING_COUNT)]
-    pub backing_reserves: Vec<u64>,
-    #[max_len(BACKING_COUNT)]
-    pub backing_decimals: Vec<u8>,
-    #[max_len(BACKING_COUNT)]
-    pub irma_in_circulation: Vec<u64>,
-    pub bump: u8,
+#[derive(PartialEq, Debug)]
+pub struct StableState {
+    pub symbol: String, // symbol of the stablecoin, e.g. "USDT"
+    pub mint_address: Pubkey, // mint address of the stablecoin
+    pub backing_decimals: u64, // need only u8, but for alignment reasons we use u64
+    pub mint_price: f64, // mint price of IRMA in terms of the backing stablecoin
+    pub backing_reserves: u64, // backing reserves is in whole numbers (no decimals)
+    pub irma_in_circulation: u64, // in whole numbers (no decimals)
+    pub active: bool, // whether the stablecoin is active or not
+    pub extra: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
 }
 
+#[account]
+#[derive(PartialEq, Debug)]
+pub struct StateMap {
+    pub reserves: BTreeMap<String, StableState>,
+    pub bump: u8, // Bump seed for PDA
+    pub padding: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
+}
 
-/// ReduceCirculations implementation
-/// This now deals with mint_price being less than redemption_price (a period of deflation).
-/// If the price of the underlying reserve goes up with respect to USD, its exchange rate with IRMA
-/// would improve (i.e. IRMA would be worth less in terms of the reserve). In this case, the system
-/// would be expected to have a higher redemption price for IRMA than mint price; however, because
-/// the objective is always to preserve the backing, the system will not allow the mint price 
-/// to be less than the redemption price. Instead, it will simply set the redemption price to the mint price.
-impl State {
+/// Immutable data for IRMA itself.
+pub const IRMA: StableState = StableState {
+    symbol: String::new(), // symbol of the stablecoin, e.g. "IRMA"
+    mint_address: pubkey!("irmacFBRx7148dQ6qq1zpzUPq57Jr8V4vi5eXDxsDe1"), // IRMA mint address on Solana
+    backing_decimals: 6,
+    mint_price: 1.0,
+    backing_reserves: 0u64,
+    irma_in_circulation: 1u64,
+    active: false, // IRMA cannot be a reserve backing of itself
+    extra: [0; 7], // padding
+};
 
-    fn reduce_circulations(&mut self, quote_token: Stablecoins, irma_amount: u64) -> Result<()> {
-        require!(irma_amount > 0, CustomError::InvalidAmount);
-        require!((quote_token as usize) < BACKING_COUNT, CustomError::InvalidQuoteToken);
-        require!(self.mint_price.len() > 0, CustomError::MintPriceNotSet);
-        require!(self.backing_reserves.len() > 0, CustomError::InsufficientReserve);
-        require!(self.irma_in_circulation.len() > 0, CustomError::InsufficientCirculation);
+impl StableState {
+
+    pub fn new(symbol: &str, mint_address: Pubkey, backing_decimals: u64) -> Result<Self> {
+        // const len: usize = symbol.to_bytes().len();
+        require!(symbol.len() <= 8, CustomError::InvalidBackingSymbol);
+        require!(mint_address != Pubkey::default(), CustomError::InvalidBackingAddress);
+        require!(backing_decimals > 0, CustomError::InvalidBacking);
+        Ok(StableState {
+            symbol: symbol.to_string(), // symbol of the stablecoin, e.g. "USDT"
+            mint_address,
+            backing_decimals,
+            mint_price: 1.0, // default mint price is 1.0
+            backing_reserves: 0,
+            irma_in_circulation: 1,
+            active: true,
+            extra: [0; 7], // for future use
+        })
+    }
+}
+
+impl StateMap {
+    pub fn new() -> Self {
+        StateMap {
+            reserves: BTreeMap::new(),
+            bump: 0,
+            padding: [0; 7], // padding to make the size of the struct 25 * EnumCount + 8
+        }
+    }
+
+    pub fn add_stablecoin(&mut self, stablecoin: StableState) {
+        if self.contains_stablecoin(&stablecoin.symbol) {
+            msg!("Stablecoin {} already exists in reserves, skipping addition.", stablecoin.symbol);
+            return;
+        }
+        let symbol = stablecoin.clone().symbol; // Get the symbol from the stablecoin
+        self.reserves.insert(symbol, stablecoin);
+    }
+
+    pub fn get_stablecoin(&self, symbol: &str) -> Option<StableState> {
+        if !self.contains_stablecoin(symbol) {
+            msg!("Stablecoin {} not found in reserves.", symbol);
+            return None;
+        }
+        self.reserves.get(symbol).map(|s| {
+            // Ensure the stablecoin is immutable
+            let stablecoin = s;
+            // Return a reference to the stablecoin
+            stablecoin
+        }).cloned()
+    }
+
+    pub fn get_mut_stablecoin(&mut self, symbol: &str) -> Option<&mut StableState> {
+        if !self.contains_stablecoin(symbol) {
+            msg!("Stablecoin {} not found in reserves.", symbol);
+            return None;
+        }
+        self.reserves.get_mut(symbol).map(|s| {
+            // Ensure the stablecoin is mutable
+            let stablecoin = &mut *s;
+            // Return a mutable reference to the stablecoin
+            stablecoin
+        })
+    }
+
+    pub fn remove_stablecoin(&mut self, symbol: &str) -> Option<StableState> {
+        self.reserves.remove(symbol) // .into_iter().copied()
+    }
+
+    pub fn contains_stablecoin(&self, symbol: &str) -> bool {
+        self.reserves.contains_key(symbol)
+    }
+    
+    pub fn len(&self) -> usize {
+        self.reserves.len()
+    }
+
+    /// ReduceCirculations implementation
+    /// This now deals with mint_price being less than redemption_price (a period of deflation).
+    /// If the price of the underlying reserve goes up with respect to USD, its exchange rate with IRMA
+    /// would improve (i.e. IRMA would be worth less in terms of the reserve). In this case, the system
+    /// would be expected to have a higher redemption price for IRMA than mint price; however, because
+    /// the objective is always to preserve the backing, the system will not allow the mint price 
+    /// to be less than the redemption price. Instead, it will simply set the redemption price to the mint price.
+    /// NOTE: irma_amount is now scaled down by the backing_decimals of IRMA.
+    fn reduce_circulations(&mut self, quote_token: &str, irma_amount: u64) -> Result<()> {
+
+        require!(quote_token.len() > 2, CustomError::InvalidQuoteToken);
+        let reserves = &mut self.reserves;
+        let clone_reserves = reserves.clone();
+
         // determine what this redemption does:
         // does it keep the relative spreads even, or does it skew the spreads?
         let mut count: u8 = 0;
         let mut average_diff: f64 = 0.0;
-        let price_differences : Vec<f64> = self.backing_reserves.iter()
+        let price_differences: BTreeMap<&String, f64> = clone_reserves.iter()
             .enumerate()
             .filter_map(|(i, reserve)| {
-                let circulation = self.irma_in_circulation[i];
-                let redemption_price = *reserve as f64 / circulation as f64;
-                let mint_price = self.mint_price[i];
-                if mint_price == 0.0 || self.backing_decimals[i] == 0 {
+                let key = reserve.0;
+                let reserve = reserve.1;
+                let reserve = reserve.clone(); // clone to get a copy of the StableState
+                // msg!("{}: {}", i, reserve.symbol.to_string());
+                let circulation = reserve.irma_in_circulation;
+                let redemption_price = reserve.backing_reserves as f64 / circulation as f64;
+                let mint_price = reserve.mint_price;
+                if mint_price == 0.0 || reserve.backing_decimals == 0 || reserve.active == false {
                     // msg!("Skipping {}: mint_price is 0.0 or backing_decimals is 0", Stablecoins::from_index(i).unwrap().to_string());
-                    return Some(0.0);
+                    return Some((key, 0.0));
                 }
                 count += 1;
+                if count != i as u8 + 1 {
+                    msg!("Warning: count is not equal to index + 1, count: {}, index: {}", count, i);
+                }
                 let x: f64 = mint_price - redemption_price;
                 average_diff += x;
-                Some(x)
+                Some((key, x))
             })
             .collect();
-        if count == 0 {
-            // msg!("No price differences found, returning early.");
-            return Ok(());
-        }
+        require!(count > 0, CustomError::InvalidBacking);
+        // if count == 0 {
+        //     // msg!("No price differences found, returning early.");
+        //     return Ok(());
+        // }
         average_diff /= count as f64;
         // msg!("Average price difference: {}", average_diff);
 
         let min_diff: f64 = 0.001; // price differences below this are ignored
 
         let mut max_price_diff: f64 = average_diff;
-        let mut other_target: Stablecoins = quote_token;
-        for (i, price_diff) in price_differences.iter().enumerate() {
+        let mut other_target: &String = &quote_token.to_string();
+        for (_i, (key, price_diff)) in price_differences.iter().enumerate() {
             // msg!("{}: {}, max {}", i, *price_diff, max_price_diff);
             if (*price_diff - max_price_diff).abs() > min_diff && *price_diff > max_price_diff {
                 max_price_diff = *price_diff;
-                other_target = Stablecoins::from_index(i);
+                other_target = key;
             }
         }
         // msg!("Max token: {}", other_target.to_string());
         // msg!("Max price diff: {}", max_price_diff);
 
-        let ro_circulation: u64 = self.irma_in_circulation[quote_token as usize];
-        let reserve: &mut u64 = self.backing_reserves.get_mut(quote_token as usize).unwrap();
-        let redemption_price: f64 = *reserve as f64 / ro_circulation as f64;
-        let subject_adjustment: u64 = (irma_amount as f64 * redemption_price).ceil() as u64;
+        let ro_circulation: u64 = reserves[quote_token].irma_in_circulation;
+        let reserve: u64 = reserves[quote_token].backing_reserves;
+        let redemption_price: f64 = reserve as f64 / ro_circulation as f64;
+        let subject_adjustment: u64 = (irma_amount as f64 * redemption_price).ceil() as u64; // irma_amount is in whole numbers, so we can use it directly
 
         // no matter what, we need to reduce the subject reserve (quote_token)
-        require!(*reserve >= subject_adjustment, CustomError::InsufficientReserve);
-        *reserve -= subject_adjustment;
+        require!(reserve >= subject_adjustment, CustomError::InsufficientReserve);
+        let mut_reserve = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+        mut_reserve.backing_reserves -= subject_adjustment;
 
         // if max price diff does not deviate much from average diff or all inflation-adjusted prices 
         // are less than the redemption prices, then reductions pertain to quote_token only.
         if (average_diff.abs() < min_diff) || (average_diff < 0.0) {
             // msg!("No significant price differences found");
-            if price_differences[quote_token as usize] >= 0.0 || other_target == quote_token {
+            if price_differences[&quote_token.to_string()] >= 0.0 || *other_target == *quote_token {
                 // msg!("If quote_token m price is larger than r price, then situation is normal.");
                 // If the price difference is positive, it means that the mint price is higher than the redemption price;
                 // in this case, we need to reduce IRMA in circulation by the irma_amount.
                 // Note that this keeps price differences the same (it's minting that adjusts redemption price).
-                let circulation: &mut u64 = self.irma_in_circulation.get_mut(quote_token as usize).unwrap();
-                require!(*circulation >= irma_amount, CustomError::InsufficientCirculation);
-                *circulation -= irma_amount;
+                let circulation: u64 = reserves[quote_token].irma_in_circulation;
+                require!(circulation >= irma_amount, CustomError::InsufficientCirculation);
+                let mut_reserve = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+                mut_reserve.irma_in_circulation -= irma_amount;
             } else {
-                msg!("m price <= r price for quote token, adjust backing reserve only for {}.", quote_token.to_string());
+                msg!("m price <= r price for quote token, adjust backing reserve only for {:?}.", quote_token);
                 // If the price difference is negative, it means that the mint price is lower than the redemption price;
                 // in this case, we need to set the redemption price eq to the mint price in order to preserve the backing.
                 // We also do not reduce IRMA in circulation, which effectively means that we are still draining the reserve,
@@ -321,7 +424,7 @@ impl State {
                 // And we're done!
             }
             // msg!("New reserve for {}: {}", quote_token.to_string(), *reserve);
-            // let ro_circulation: u64 = self.irma_in_circulation[quote_token as usize];
+            // let ro_circulation: u64 = reserves[quote_token].irma_in_circulation;
             // msg!("New circulation for {}: {}", quote_token.to_string(), ro_circulation);
             return Ok(());
         }
@@ -330,19 +433,19 @@ impl State {
         // can be large.
         // msg!("Other target for normal adjustments: {}", other_target.to_string());
 
-        let other_circulation: u64 = self.irma_in_circulation[other_target as usize];
+        let other_circulation: u64 = reserves[other_target].irma_in_circulation;
 
         // if we don't have enough reserve to redeem the irma_amount, just error out;
         // we can't allow redemption from a reserve that is smaller than the irma_amount.
         // require!(irma_amount <= *circulation, CustomError::InsufficientCirculation);
 
-        let other_price: f64 = self.mint_price[other_target as usize];
-        let price: f64 = self.mint_price[quote_token as usize];
-        let other_reserve: u64 = self.backing_reserves[other_target as usize];
-        let reserve: u64 = self.backing_reserves[quote_token as usize];
+        let other_price: f64 = reserves[other_target].mint_price;
+        let price: f64 = reserves[quote_token].mint_price;
+        let other_reserve: u64 = reserves[other_target].backing_reserves;
+        let reserve: u64 = reserves[quote_token].backing_reserves;
 
         let other_price_diff: f64 = other_price - (other_reserve / other_circulation) as f64;
-        let ro_circulation: u64 = self.irma_in_circulation[quote_token as usize];
+        let ro_circulation: u64 = reserves[quote_token].irma_in_circulation;
         let post_price_diff: f64 = price - (reserve as f64 - irma_amount as f64 / price) / ro_circulation as f64;
         let post_other_price_diff: f64 = other_price - (other_reserve as f64 / (other_circulation - irma_amount) as f64);
 
@@ -351,9 +454,10 @@ impl State {
             // if irma_amount is such that it could not improve the redemption price when applied to other stabecoin reserve,
             // we can just subtract from the circulation (same as normal case).
             // Note that the normal case does not change redemtion prices.
-            let circulation: &mut u64 = self.irma_in_circulation.get_mut(quote_token as usize).unwrap();
-            require!(irma_amount <= *circulation, CustomError::InsufficientCirculation);
-            *circulation -= irma_amount;
+            let circulation: u64 = reserves[quote_token].irma_in_circulation;
+            require!(irma_amount <= circulation, CustomError::InsufficientCirculation);
+            let mut_reserve = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            mut_reserve.irma_in_circulation -= irma_amount;
         } else
         if post_other_price_diff <= post_price_diff {
             // msg!("--> Post other price diff is less than or equal to second price diff, 
@@ -361,8 +465,8 @@ impl State {
             // if irma_amount is such that it would reduce discrepancy for other stablecoin more post 
             // adjustment, we can choose to subtract irma_amount from the other_circulation only
             require!(irma_amount <= other_circulation, CustomError::InsufficientCirculation);
-            let other_circulation = self.irma_in_circulation.get_mut(other_target as usize).unwrap();
-            *other_circulation -= irma_amount;
+            let mut_reserve = reserves.get_mut(other_target).ok_or(CustomError::InvalidQuoteToken)?;
+            mut_reserve.irma_in_circulation -= irma_amount;
         } else {
             // if irma amount is such that it doesn't improve the redemption price for either stablecoin,
             // we can do a linear adjustment of both other and second circulations.
@@ -373,16 +477,15 @@ impl State {
             require!(adjustment_amount > 0.0, CustomError::InvalidAmount);
             require!(adjustment_amount <= irma_amount as f64, CustomError::InvalidAmount);
             // msg!("Adjusting other circulation by {} and second circulation by {}", adjustment_amount.ceil(), irma_amount as f64 - adjustment_amount.ceil());
-            let other_circulation: &mut u64 = self.irma_in_circulation.get_mut(other_target as usize).unwrap();
-            *other_circulation -= adjustment_amount.ceil() as u64;
-            let circulation: &mut u64 = self.irma_in_circulation.get_mut(quote_token as usize).unwrap();
-            *circulation -= irma_amount - adjustment_amount.ceil() as u64;
+            let mut_reserve = reserves.get_mut(other_target).ok_or(CustomError::InvalidQuoteToken)?;
+            mut_reserve.irma_in_circulation -= adjustment_amount.ceil() as u64;
+            let mut_reserve = reserves.get_mut(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            mut_reserve.irma_in_circulation -= irma_amount - adjustment_amount.ceil() as u64;
         }
 
         return Ok(());
     }
 }
-
 
 #[error_code]
 pub enum CustomError {
@@ -400,5 +503,11 @@ pub enum CustomError {
     InvalidBacking,
     #[msg("Invalid IRMA amount.")]
     InvalidIrmaAmount,
+    #[msg("No reserve list.")]
+    InvalidReserveList,
+    #[msg("Invalid backing symbol.")]
+    InvalidBackingSymbol,
+    #[msg("Invalid backing address.")]
+    InvalidBackingAddress,
 }
 
