@@ -122,6 +122,8 @@ pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: &str, irma_amount: u64
     // There is a redemption rule: every redemption is limited to 100k IRMA or 10% of the IRMA in circulation (for
     // the quote token) whichever is smaller.
     let circulation: u64 = state.irma_in_circulation;
+    // let circulation: u64 = state.irma_in_circulation * (10u64.pow(state.backing_decimals as u32));
+    // require!(circulation > 0, CustomError::InsufficientCirculation);
     let irma_amount = (irma_amount as f64 / (10.0_f64).powf(IRMA.backing_decimals as f64)) as f64;
     require!((irma_amount <= 100_000.0) && (irma_amount <= circulation as f64 / 10.0), CustomError::InvalidIrmaAmount);
 

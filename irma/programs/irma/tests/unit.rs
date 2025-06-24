@@ -26,7 +26,7 @@ mod tests {
         let reserves = &mut state.reserves;
         let usdt: StableState = StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6 as u64).unwrap();
         reserves.insert("USDT".to_string(), usdt);
-        assert_eq!(reserves.len(), 0);
+        assert_eq!(reserves.len(), 1);
         state
     }
 
@@ -544,7 +544,7 @@ mod tests {
         // Test for near maximum redemption, multiple times, until it fails.
         // What we expect is that these repeated redemptions will equalize the differences between
         // mint prices and redemptions prices for all stablecoins.
-        let mut reslt = redeem_irma(ctx, "USDT", 100_000);
+        let mut reslt = redeem_irma(ctx, "FDUSD", 100_000_000_000);
         while reslt.is_ok() {
             ctx = Context::new(
                 program_id,
@@ -552,7 +552,7 @@ mod tests {
                 &[],
                 IrmaCommonBumps::default(), // Use default bumps if not needed
             );
-            reslt = redeem_irma(ctx, "USDT", 100_000_000_000);
+            reslt = redeem_irma(ctx, "FDUSD", 100_000_000_000);
             match reslt {
                 Err(e) => {
                     msg!("Error redeeming IRMA for USDT: {:?}", e);
