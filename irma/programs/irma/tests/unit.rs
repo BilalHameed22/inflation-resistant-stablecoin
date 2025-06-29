@@ -35,12 +35,22 @@ mod tests {
         let mut state: StateMap = init_state();
         let quote_token: &str = "USDT";
         let new_price: f64 = 1.23;
-        let reserves = &mut state.reserves;
-        let mut_reserve = reserves.get_mut(quote_token).unwrap();
-        mut_reserve.mint_price = 1.0;
-        mut_reserve.mint_price = new_price;
+        {
+            let reserves = &mut state.reserves;
+            let mut_reserve = reserves.get_mut(quote_token).unwrap();
+            // assert_eq!(mut_reserve.mint_price, 1.0);
+            mut_reserve.mint_price = 1.0;
+        }
+        {
+            let reserves = state.reserves.clone();
+            assert_eq!(reserves[quote_token].mint_price, 1.0);
+        }
+        {
+            let reserves = &mut state.reserves;
+            let mut_reserve = reserves.get_mut(quote_token).unwrap();
+            mut_reserve.mint_price = new_price;
+        }
         let reserves = state.reserves;
-        assert_eq!(reserves[quote_token].mint_price, 1.0);
         assert_eq!(reserves[quote_token].mint_price, new_price);
     }
 
@@ -66,18 +76,24 @@ mod tests {
         let mut state = init_state();
         let reserves = &mut state.reserves;
         let quote_token = "USDT";
-        let irma_amount = 10;
-        let prev_circulation = reserves[quote_token].irma_in_circulation;
+        {
+            let mut_reserve = reserves.get_mut(quote_token).unwrap();
+            mut_reserve.backing_reserves = 1000;
+        }
+        let prevBacking = reserves[quote_token].backing_reserves;
+        {
+            let mut_reserve = reserves.get_mut(quote_token).unwrap();
+            mut_reserve.backing_reserves -= 100;
+        }
         // Simulate redeem_irma logic (simple case)
-        let mut_reserve = reserves.get_mut(quote_token).unwrap();
-        mut_reserve.irma_in_circulation -= irma_amount;
-        assert_eq!(reserves[quote_token].irma_in_circulation, prev_circulation - irma_amount);
+        assert_eq!(reserves[quote_token].backing_reserves, prevBacking - 100);
     }
 
     #[test]
     fn test_reduce_circulations_logic() {
         let mut state = init_state();
         let reserves = &mut state.reserves;
+        let prev_circulation = 100; // reserves["USDT"].irma_in_circulation;
         let irma_amount = 5;
         {
             // Manipulate state to create a price difference
@@ -87,7 +103,6 @@ mod tests {
             mut_reserve.irma_in_circulation = 100;
             mut_reserve.irma_in_circulation -= irma_amount;
         }
-        let prev_circulation = reserves["USDT"].irma_in_circulation;
         assert_eq!(reserves["USDT"].irma_in_circulation, prev_circulation - irma_amount);
     }
 

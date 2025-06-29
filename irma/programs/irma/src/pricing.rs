@@ -2,9 +2,26 @@
 // #![feature(trivial_bounds)]
 // #[cfg(feature = "idl-build")]
 use std::collections::BTreeMap;
+use std::string::String;
+use std::vec::Vec;
+use std::option::Option;
+use crate::pricing::solana_program::vote::state::serde_tower_sync::serialize;
+// use crate::borsh::schema::Definition::Struct;
 // use borsh::{BorshDeserialize, BorshSerialize};
-use anchor_lang::prelude::*;
+// use anchor_lang::prelude::Pubkey;
+use anchor_lang_idl_spec::IdlType::Option as IdlOption;
+use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
+use anchor_lang_idl_spec::{
+    IdlType,
+    IdlTypeDef, 
+    IdlTypeDefTy, 
+    IdlField, 
+    IdlGenericArg, 
+    IdlDefinedFields, 
+    IdlSerialization,
+    IdlTypeDefTy::Type};
 use anchor_lang::*;
+use anchor_lang::prelude::*;
 
 
 // The number of stablecoins that are initially supported by the IRMA program.
@@ -37,7 +54,12 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
 }
 
 /// The whole purpose for using a BTreeMap is to allow for easy addition of new stablecoins.
-pub fn add_stablecoin(ctx: Context<IrmaCommon>, symbol: &str, mint_address: Pubkey, backing_decimals: u8) -> Result<()> {
+pub fn add_stablecoin(
+        ctx: Context<IrmaCommon>, 
+        symbol: &str, 
+        mint_address: prelude::Pubkey,
+        backing_decimals: u8) -> Result<()> 
+{
     let state = &mut ctx.accounts.state;
     if state.reserves.len() >= MAX_BACKING_COUNT {
         msg!("Maximum number of stablecoins reached.");
@@ -173,7 +195,7 @@ pub struct IrmaCommon<'info> {
 #[derive(PartialEq, Debug)]
 pub struct StableState {
     pub symbol: String, // symbol of the stablecoin, e.g. "USDT"
-    pub mint_address: Pubkey, // mint address of the stablecoin
+    pub mint_address: prelude::Pubkey, // mint address of the stablecoin
     pub backing_decimals: u64, // need only u8, but for alignment reasons we use u64
     pub mint_price: f64, // mint price of IRMA in terms of the backing stablecoin
     pub backing_reserves: u64, // backing reserves is in whole numbers (no decimals)
@@ -202,12 +224,149 @@ pub const IRMA: StableState = StableState {
     extra: [0; 7], // padding
 };
 
+pub trait MapTrait {
+    fn size(&self) -> usize;
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()>;
+    // fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> where Self: Sized;
+    fn get_full_path() -> String;
+    fn create_type() -> Option<IdlTypeDef>;
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>);
+}
+
+impl MapTrait for Pubkey {
+    fn size(&self) -> usize {
+        // Calculate the size of the Pubkey
+        std::mem::size_of::<Self>()
+    }
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize the Pubkey to the writer
+        writer.write_all(self.as_ref())
+    }
+    fn get_full_path() -> String {
+        // Return the full path of the Pubkey
+        "anchor_lang::prelude::Pubkey".to_string()
+    }
+    fn create_type() -> Option<IdlTypeDef> {
+        // Create an IdlTypeDef for the Pubkey
+        Some(IdlTypeDef {
+            name: "Pubkey".to_string(),
+            ty: IdlTypeDefTy::Type { alias: IdlType::Pubkey },
+            docs: vec![],
+            repr: None,
+            generics: vec![],
+            serialization: IdlSerialization::Borsh,
+        })
+    }
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+        // Insert the Pubkey type into the types map
+        _types.insert("Pubkey".to_string(), Self::create_type().unwrap());
+    }
+}
+
+impl MapTrait for BTreeMap<String, StableState> {
+    fn size(&self) -> usize {
+        // Calculate the size of the BTreeMap
+        self.iter().map(|(k, _v)| k.len() + std::mem::size_of::<StableState>()).sum()
+    }
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        // Serialize the BTreeMap to the writer
+        for (key, value) in self.iter() {
+            writer.write_all(key.as_bytes())?;
+            value.serialize(writer)?;
+        }
+        Ok(())
+    }
+    // fn deserialize<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    //     // Deserialize the BTreeMap from the reader
+    //     let mut map = BTreeMap::new();
+    //     let mut key = String::new();
+    //     while let Ok(_) = reader.read_to_string(&mut key) {
+    //         if key.is_empty() { break; }
+    //         let mut map_value_bytes = [0u8; std::mem::size_of::<StableState>()] as String;
+    //         let result = reader.read_to_string(&mut map_value_bytes);
+    //         match result {
+    //             Ok(_) => {},
+    //             Err(e) => {
+    //                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
+    //                     break; // End of file reached
+    //                 } else {
+    //                     return Err(e); // Other error
+    //                 }
+    //             }
+    //         }
+    //         let value = StableState::deserialize(&map_value_bytes)?; // reader - expected `&mut &[u8]`, found `&mut R
+    //         map.insert(key.clone(), value);
+    //         key.clear();
+    //     }
+    //     Ok(map)
+    // }
+    fn get_full_path() -> String {
+        // Return the full path of the BTreeMap
+        "std::collections::BTreeMap".to_string()
+    }
+    fn create_type() -> Option<IdlTypeDef> {
+        // Create an IdlTypeDef for the BTreeMap
+        Some(IdlTypeDef {
+            name: "BTreeMap".to_string(),
+            ty: IdlTypeDefTy::Type {
+                alias: IdlType::Defined {
+                    name: "BTreeMap".to_string(),
+                    generics: vec![
+                        IdlGenericArg::Type { ty: IdlType::String }, // Key type is String
+                        IdlGenericArg::Type { 
+                            ty: IdlType::Defined {
+                                name: "StableState".to_string(),
+                                generics: vec![
+                                    IdlGenericArg::Type { ty: IdlType::String },
+                                    IdlGenericArg::Type { ty: IdlType::Pubkey },
+                                    IdlGenericArg::Type { ty: IdlType::U64 },
+                                    IdlGenericArg::Type { ty: IdlType::F64 },
+                                    IdlGenericArg::Type { ty: IdlType::U64 },
+                                    IdlGenericArg::Type { ty: IdlType::U64 },
+                                    IdlGenericArg::Type { ty: IdlType::Bool },
+                                ],
+                            },
+                        }
+                    ],
+                }
+            },
+            docs: vec![],
+            repr: None,
+            generics: vec![],
+            serialization: IdlSerialization::Borsh,
+        })
+    }
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+        // Insert the BTreeMap type into the types map
+        _types.insert("BTreeMap".to_string(), Self::create_type().unwrap());
+        _types.insert("StableState".to_string(), IdlTypeDef {
+            name: "StableState".to_string(),
+            ty: IdlTypeDefTy::Struct {
+                // fields: IdlOption::<IdlDefinedFields::Named> (vec![
+                fields: Some(IdlDefinedFields::Named(vec![
+                    IdlField{ name: "symbol".to_string(), ty: IdlType::String, docs: vec![] },
+                    IdlField { name: "mint_address".to_string(), ty: IdlType::Pubkey, docs: vec![] },
+                    IdlField { name: "backing_decimals".to_string(), ty: IdlType::U64, docs: vec![] },
+                    IdlField { name: "mint_price".to_string(), ty: IdlType::F64, docs: vec![] },
+                    IdlField { name: "backing_reserves".to_string(), ty: IdlType::U64, docs: vec![] },
+                    IdlField { name: "irma_in_circulation".to_string(), ty: IdlType::U64, docs: vec![] },
+                    IdlField { name: "active".to_string(), ty: IdlType::Bool, docs: vec![] },
+                ])),
+            },
+            docs: vec![],
+            repr: None,
+            generics: vec![],
+            serialization: IdlSerialization::Borsh,
+        });
+    }
+}
+
 impl StableState {
 
-    pub fn new(symbol: &str, mint_address: Pubkey, backing_decimals: u64) -> Result<Self> {
+    pub fn new(symbol: &str, mint_address: prelude::Pubkey, backing_decimals: u64) -> Result<Self> {
         // const len: usize = symbol.to_bytes().len();
         require!(symbol.len() <= 8, CustomError::InvalidBackingSymbol);
-        require!(mint_address != Pubkey::default(), CustomError::InvalidBackingAddress);
+        require!(mint_address != prelude::Pubkey::default(), CustomError::InvalidBackingAddress);
         require!(backing_decimals > 0, CustomError::InvalidBacking);
         Ok(StableState {
             symbol: symbol.to_string(), // symbol of the stablecoin, e.g. "USDT"
@@ -233,7 +392,7 @@ impl StateMap {
 
     pub fn add_stablecoin(&mut self, stablecoin: StableState) {
         if self.contains_stablecoin(&stablecoin.symbol) {
-            msg!("Stablecoin {} already exists in reserves, skipping addition.", stablecoin.symbol);
+            msg!("MapTrait {} already exists in reserves, skipping addition.", stablecoin.symbol);
             return;
         }
         let symbol = stablecoin.clone().symbol; // Get the symbol from the stablecoin
@@ -242,7 +401,7 @@ impl StateMap {
 
     pub fn get_stablecoin(&self, symbol: &str) -> Option<StableState> {
         if !self.contains_stablecoin(symbol) {
-            msg!("Stablecoin {} not found in reserves.", symbol);
+            msg!("MapTrait {} not found in reserves.", symbol);
             return None;
         }
         self.reserves.get(symbol).map(|s| {
@@ -255,7 +414,7 @@ impl StateMap {
 
     pub fn get_mut_stablecoin(&mut self, symbol: &str) -> Option<&mut StableState> {
         if !self.contains_stablecoin(symbol) {
-            msg!("Stablecoin {} not found in reserves.", symbol);
+            msg!("MapTrait {} not found in reserves.", symbol);
             return None;
         }
         self.reserves.get_mut(symbol).map(|s| {
