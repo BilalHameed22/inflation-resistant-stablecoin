@@ -1,16 +1,11 @@
 #![allow(unexpected_cfgs)]
 // #![feature(trivial_bounds)]
 // #[cfg(feature = "idl-build")]
-use std::collections::BTreeMap;
 use std::string::String;
-use std::vec::Vec;
+// se std::vec::Vec;
 use std::option::Option;
-use crate::pricing::solana_program::vote::state::serde_tower_sync::serialize;
-// use crate::borsh::schema::Definition::Struct;
-// use borsh::{BorshDeserialize, BorshSerialize};
-// use anchor_lang::prelude::Pubkey;
-use anchor_lang_idl_spec::IdlType::Option as IdlOption;
-use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
+// use anchor_lang_idl_spec::IdlType::Option as IdlOption;
+// use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
 use anchor_lang_idl_spec::{
     IdlType,
     IdlTypeDef, 
@@ -19,10 +14,17 @@ use anchor_lang_idl_spec::{
     IdlGenericArg, 
     IdlDefinedFields, 
     IdlSerialization,
-    IdlTypeDefTy::Type};
+};
 use anchor_lang::*;
+// use anchor_lang::system_program::ID;
 use anchor_lang::prelude::*;
+use std::collections::BTreeMap;
 
+use crate::Initialize;
+use crate::IrmaCommon;
+// use crate::StateMap;
+// use crate::StableState;
+// use crate::IRMA;
 
 // The number of stablecoins that are initially supported by the IRMA program.
 pub const BACKING_COUNT: usize = 6 as usize;
@@ -35,7 +37,7 @@ declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 /// FIXME: the decimals are all assumed to be zero, which is not true for all stablecoins.
 
 
-pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+pub fn initialize_pricing(ctx: Context<Initialize>) -> Result<()> {
     msg!("Greetings from: {:?}", ctx.program_id);
     let state = &ctx.accounts.state;
     if state.reserves.len() > 0 {
@@ -55,7 +57,7 @@ pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
 
 /// The whole purpose for using a BTreeMap is to allow for easy addition of new stablecoins.
 pub fn add_stablecoin(
-        ctx: Context<IrmaCommon>, 
+        ctx: Context<Initialize>, 
         symbol: &str, 
         mint_address: prelude::Pubkey,
         backing_decimals: u8) -> Result<()> 
@@ -71,14 +73,37 @@ pub fn add_stablecoin(
     Ok(())
 }
 
-pub fn hello(ctx: Context<IrmaCommon>) -> Result<()> {
+/// Remove a stablecoin from the reserves by its symbol.
+pub fn remove_stablecoin(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
+    let state = &mut ctx.accounts.state;
+    if !state.contains_stablecoin(symbol) {
+        msg!("Stablecoin {} not found in reserves.", symbol);
+        return Err(error!(CustomError::InvalidBacking));
+    }
+    state.remove_stablecoin(symbol);
+    msg!("Removed stablecoin: {}", symbol);
+    Ok(())
+}
+
+/// Deactivate a reserve stablecoin.
+pub fn deactivate_stablecoin(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
+    let state = &mut ctx.accounts.state;
+    if !state.contains_stablecoin(symbol) {
+        msg!("Stablecoin {} not found in reserves.", symbol);
+        return Err(error!(CustomError::InvalidBacking));
+    }
+    state.deactivate_stablecoin(symbol);
+    msg!("Deactivated stablecoin: {}", symbol);
+    Ok(())
+}
+
+pub fn validate_reserve(ctx: Context<IrmaCommon>, reserve: &str) -> Result<()> {
     let state = &mut ctx.accounts.state;
     if state.reserves.len() == 0 {
         msg!("State not initialized, call initialize first...");
         return Err(error!(CustomError::InvalidBacking));
     }
-    let usdt_symbol = "USDT";
-    let usdt = state.get_stablecoin(usdt_symbol).ok_or(CustomError::InvalidQuoteToken)?;
+    let usdt = state.get_stablecoin(reserve).ok_or(CustomError::InvalidQuoteToken)?;
     msg!("USDT initialized with mint prices: {:?}", usdt.mint_price);
     msg!("Total USDT reserves: {:?}", usdt.backing_reserves);
     msg!("Irma in circulation for USDT: {:?}", usdt.irma_in_circulation);
@@ -94,7 +119,6 @@ fn validate_params(reserves: BTreeMap<String, StableState>, quote_token: &str) -
     require!(stablecoin.active, CustomError::InvalidQuoteToken);
     require!(stablecoin.backing_decimals > 0, CustomError::InvalidQuoteToken);
     require!(stablecoin.mint_price > 0.0, CustomError::InvalidAmount);
-    require!(stablecoin.backing_reserves >= 0u64, CustomError::InvalidBacking);
     require!(stablecoin.irma_in_circulation > 0u64, CustomError::InsufficientCirculation);
     Ok(())
 }
@@ -154,26 +178,6 @@ pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: &str, irma_amount: u64
     Ok(())
 }
 
-#[derive(Accounts)]
-pub struct Initialize<'info> {
-    #[account(init, space=120*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, StateMap>,
-    #[account(mut)]
-    pub irma_admin: Signer<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct IrmaCommon<'info> {
-    #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, StateMap>,
-    #[account(mut)]
-    pub trader: Signer<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: Program<'info, System>,
-}
-
 // #[account]
 // #[derive(InitSpace)]
 // #[derive(Debug)]
@@ -195,7 +199,7 @@ pub struct IrmaCommon<'info> {
 #[derive(PartialEq, Debug)]
 pub struct StableState {
     pub symbol: String, // symbol of the stablecoin, e.g. "USDT"
-    pub mint_address: prelude::Pubkey, // mint address of the stablecoin
+    pub mint_address: Pubkey, // mint address of the stablecoin
     pub backing_decimals: u64, // need only u8, but for alignment reasons we use u64
     pub mint_price: f64, // mint price of IRMA in terms of the backing stablecoin
     pub backing_reserves: u64, // backing reserves is in whole numbers (no decimals)
@@ -304,6 +308,7 @@ impl MapTrait for BTreeMap<String, StableState> {
         // Return the full path of the BTreeMap
         "std::collections::BTreeMap".to_string()
     }
+    // FIXME: Why is StableState duplicated here? (see insert_types)
     fn create_type() -> Option<IdlTypeDef> {
         // Create an IdlTypeDef for the BTreeMap
         Some(IdlTypeDef {
@@ -425,8 +430,26 @@ impl StateMap {
         })
     }
 
+    pub fn get_stablecoin_symbol(&self, mint_address: prelude::Pubkey) -> Option<String> {
+        for (symbol, stablecoin) in &self.reserves {
+            if stablecoin.mint_address == mint_address {
+                return Some(symbol.clone());
+            }
+        }
+        None
+    }
+
     pub fn remove_stablecoin(&mut self, symbol: &str) -> Option<StableState> {
         self.reserves.remove(symbol) // .into_iter().copied()
+    }
+
+    pub fn deactivate_stablecoin(&mut self, symbol: &str) {
+        if let Some(stablecoin) = self.reserves.get_mut(symbol) {
+            stablecoin.active = false;
+            msg!("Deactivated stablecoin: {}", symbol);
+        } else {
+            msg!("Stablecoin {} not found in reserves.", symbol);
+        }
     }
 
     pub fn contains_stablecoin(&self, symbol: &str) -> bool {

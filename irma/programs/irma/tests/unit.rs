@@ -3,18 +3,19 @@
 mod tests {
     use anchor_lang::prelude::*;
     use anchor_lang::prelude::Pubkey;
-    use solana_sdk_ids::system_program;
+    use anchor_lang::system_program;
     use anchor_lang::prelude::Signer;
     // use anchor_lang::prelude::Account;
     use anchor_lang::prelude::Program;
     use anchor_lang::context::Context;
     // use bytemuck::bytes_of_mut;
     // use anchor_lang::Discriminator;
-    use irma_program::IRMA_ID;
-    use irma_program::pricing::CustomError;
-    use irma_program::pricing::{StateMap, StableState, Initialize, IrmaCommon, IrmaCommonBumps, InitializeBumps};
-    use irma_program::pricing::{initialize, set_mint_price, mint_irma, redeem_irma};
-    use irma_program::pricing::MAX_BACKING_COUNT;
+    use irma::IRMA_ID;
+    use irma::pricing::CustomError;
+    use irma::pricing::{StateMap, StableState};
+    use irma::pricing::{initialize_pricing, set_mint_price, mint_irma, redeem_irma};
+    use irma::pricing::MAX_BACKING_COUNT;
+    use irma::{IrmaCommon, Initialize, IrmaCommonBumps, InitializeBumps};
 
     
     fn allocate_state() -> StateMap {
@@ -185,7 +186,7 @@ mod tests {
             &[],
             InitializeBumps::default(), // Use default bumps if not needed
         );
-        let result: std::result::Result<(), Error> = initialize(ctx);
+        let result: std::result::Result<(), Error> = initialize_pricing(ctx);
         assert!(result.is_ok());
         msg!("StateMap account: {:?}", accounts.state);
         return (accounts.state, accounts.irma_admin, accounts.system_program);
@@ -194,7 +195,7 @@ mod tests {
     #[test]
     fn test_initialize_anchor() {
         msg!("-------------------------------------------------------------------------");
-        msg!("Testing initialize IRMA with normal conditions");  
+        msg!("Testing initialize_pricing IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
         let program_id: &'static Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
@@ -211,7 +212,7 @@ mod tests {
             &[],
             InitializeBumps::default(), // Use default bumps if not needed
         );
-        let result: std::result::Result<(), Error> = initialize(ctx);
+        let result: std::result::Result<(), Error> = initialize_pricing(ctx);
         assert!(result.is_ok());
         msg!("StateMap account initialized successfully: {:?}", accounts.state);
     }

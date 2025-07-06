@@ -1,8 +1,27 @@
 // use solana_sdk_ids::system_program;
+// #[cfg(feature = "idl-build")]
 use anchor_lang::prelude::*;
+use anchor_lang::prelude::borsh;
+use anchor_lang::prelude::AccountInfo;
+use anchor_lang::prelude::AccountLoader;
+use anchor_lang::prelude::CpiContext;
+use anchor_lang::prelude::Program;
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::prelude::Rent;
+use anchor_lang::prelude::Signer;
+use anchor_lang::prelude::System;
+use anchor_lang::prelude::SolanaSysvar;
+use anchor_lang::Discriminator;
+use anchor_lang::error;
+use anchor_lang::Key;
+use anchor_lang::ToAccountInfo;
+use anchor_lang_idl_spec::IdlTypeDef;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use static_assertions::const_assert_eq;
+use std::collections::BTreeMap;
 use std::mem::size_of;
+use std::mem::align_of;
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
@@ -19,6 +38,8 @@ use anchor_lang::{
     AnchorSerialize, 
     AnchorDeserialize, 
     declare_id,
+    error_code,
+    require_keys_neq,
     Result,
     // ToAccountMetas, 
     // ToAccountInfos,
@@ -494,6 +515,24 @@ pub enum BookSideOrderTree {
 pub enum OrderTreeType {
     Bids,
     Asks,
+}
+
+trait MapTrait {
+    fn get_full_path() -> String;
+    fn create_type() -> Option<IdlTypeDef>;
+    fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>);
+}
+impl MapTrait for u32 {
+    fn get_full_path() -> String {
+        "u32".to_string()
+    }
+    fn create_type() -> Option<IdlTypeDef> {
+        // Your logic here
+        None
+    }
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+        // Your logic here
+    }
 }
 
 impl OrderTreeType {
