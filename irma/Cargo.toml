@@ -5,6 +5,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+# ahash = "0.8.12"
 anchor-client = "0.31.1"
 anchor-lang = "0.31.1"
 anchor-lang-idl-spec = "0.1.0"

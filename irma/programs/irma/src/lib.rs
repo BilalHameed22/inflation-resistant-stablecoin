@@ -8,6 +8,14 @@
 // use bytemuck::{
 //     Pod,
 // };
+
+// // use std::hash::BuildHasherDefault;
+// use ahash::{AHasher, RandomState};
+// use getrandom::Error;
+// // use std::collections::HashMap;
+// // use crate::util::inner_u32;
+// // use crate::util::inner_u64;
+
 use anchor_lang::prelude::AccountInfo;
 use anchor_lang::prelude::AccountLoader;
 use anchor_lang::prelude::Context;
@@ -54,6 +62,24 @@ use pricing::{
     MAX_BACKING_COUNT
 };
 
+// #[no_mangle]
+// unsafe extern "Rust" fn __getrandom_v03_custom(
+//     dest: *mut u8,
+//     len: usize,
+// ) -> Result<(), Error> {
+//     Err(Error::UNSUPPORTED)
+// }
+
+// impl Default for AHasher {
+//     // let mut map: HashMap<i32, i32, BuildHasherDefault<AHasher>> = HashMap::default();
+//     // map.insert(13, 53);
+
+//     #[inline]
+//     fn default() -> AHasher {
+//         RandomState::with_fixed_keys().build_hasher()
+//     }
+// }
+
 // CPI context and consume_given_events for OpenBook V2
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
 pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
@@ -88,7 +114,7 @@ pub mod irma {
     /// 1. internally swapping 100k of stablecoin B for stablecoin A, and then
     /// 2. externally swapping 100k of stablecoin A for 100k of stablecoin B (open market).
     pub fn remove_stablecoin(ctx: Context<Initialize>, symbol: String) -> Result<()> {
-        pricing::remove_stablecoin(ctx, &symbol)
+        pricing::remove_reserve(ctx, &symbol)
     }
 
     /// Deactivate a reserve stablecoin.
@@ -96,8 +122,8 @@ pub mod irma {
     /// The only action that is disabled should be the minting of IRMA using this reserve stablecoin.
     /// This is done in preparation for removing the stablecoin from the reserves.
     /// For orderly removal, first announce separate dates of deactivation and removal.
-    pub fn deactivate_stablecoin(ctx: Context<Initialize>, symbol: String) -> Result<()> {
-        pricing::deactivate_stablecoin(ctx, &symbol)
+    pub fn disable_reserve(ctx: Context<Initialize>, symbol: String) -> Result<()> {
+        pricing::disable_reserve(ctx, &symbol)
     }
 
     /// Crank the OpenBook V2 from client.

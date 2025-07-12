@@ -49,7 +49,7 @@ pub fn initialize_pricing(ctx: Context<Initialize>) -> Result<()> {
     state.bump = 13u8; // InitializeBumps::bump(&ctx.bumps).unwrap_or(0);
     msg!("State initialized with bump: {}", state.bump);
 
-    state.add_initial_stablecoins()?;
+    state.init_reserves()?;
     msg!("Initial stablecoins added to the state.");
 
     Ok(())
@@ -74,25 +74,25 @@ pub fn add_stablecoin(
 }
 
 /// Remove a stablecoin from the reserves by its symbol.
-pub fn remove_stablecoin(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
+pub fn remove_reserve(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
     let state = &mut ctx.accounts.state;
-    if !state.contains_stablecoin(symbol) {
+    if !state.contains_reserve(symbol) {
         msg!("Stablecoin {} not found in reserves.", symbol);
         return Err(error!(CustomError::InvalidBacking));
     }
-    state.remove_stablecoin(symbol);
+    state.remove_reserve(symbol);
     msg!("Removed stablecoin: {}", symbol);
     Ok(())
 }
 
 /// Deactivate a reserve stablecoin.
-pub fn deactivate_stablecoin(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
+pub fn disable_reserve(ctx: Context<Initialize>, symbol: &str) -> Result<()> {
     let state = &mut ctx.accounts.state;
-    if !state.contains_stablecoin(symbol) {
+    if !state.contains_reserve(symbol) {
         msg!("Stablecoin {} not found in reserves.", symbol);
         return Err(error!(CustomError::InvalidBacking));
     }
-    state.deactivate_stablecoin(symbol);
+    state.disable_reserve(symbol);
     msg!("Deactivated stablecoin: {}", symbol);
     Ok(())
 }
@@ -173,7 +173,7 @@ pub fn redeem_irma(ctx: Context<IrmaCommon>, quote_token: &str, irma_amount: u64
     let irma_amount = (irma_amount as f64 / (10.0_f64).powf(IRMA.backing_decimals as f64)) as f64;
     require!((irma_amount <= 100_000.0) && (irma_amount <= circulation as f64 / 10.0), CustomError::InvalidIrmaAmount);
 
-    ctx.accounts.state.reduce_circulations(quote_token, irma_amount.ceil() as u64)?;
+    ctx.accounts.state.distribute(quote_token, irma_amount.ceil() as u64)?;
 
     Ok(())
 }
@@ -396,7 +396,7 @@ impl StateMap {
     }
 
     pub fn add_stablecoin(&mut self, stablecoin: StableState) {
-        if self.contains_stablecoin(&stablecoin.symbol) {
+        if self.contains_reserve(&stablecoin.symbol) {
             msg!("MapTrait {} already exists in reserves, skipping addition.", stablecoin.symbol);
             return;
         }
@@ -405,7 +405,7 @@ impl StateMap {
     }
 
     pub fn get_stablecoin(&self, symbol: &str) -> Option<StableState> {
-        if !self.contains_stablecoin(symbol) {
+        if !self.contains_reserve(symbol) {
             msg!("MapTrait {} not found in reserves.", symbol);
             return None;
         }
@@ -418,7 +418,7 @@ impl StateMap {
     }
 
     pub fn get_mut_stablecoin(&mut self, symbol: &str) -> Option<&mut StableState> {
-        if !self.contains_stablecoin(symbol) {
+        if !self.contains_reserve(symbol) {
             msg!("MapTrait {} not found in reserves.", symbol);
             return None;
         }
@@ -439,11 +439,11 @@ impl StateMap {
         None
     }
 
-    pub fn remove_stablecoin(&mut self, symbol: &str) -> Option<StableState> {
+    pub fn remove_reserve(&mut self, symbol: &str) -> Option<StableState> {
         self.reserves.remove(symbol) // .into_iter().copied()
     }
 
-    pub fn deactivate_stablecoin(&mut self, symbol: &str) {
+    pub fn disable_reserve(&mut self, symbol: &str) {
         if let Some(stablecoin) = self.reserves.get_mut(symbol) {
             stablecoin.active = false;
             msg!("Deactivated stablecoin: {}", symbol);
@@ -452,7 +452,7 @@ impl StateMap {
         }
     }
 
-    pub fn contains_stablecoin(&self, symbol: &str) -> bool {
+    pub fn contains_reserve(&self, symbol: &str) -> bool {
         self.reserves.contains_key(symbol)
     }
     
@@ -460,7 +460,7 @@ impl StateMap {
         self.reserves.len()
     }
 
-    pub fn add_initial_stablecoins(&mut self) -> Result<()> {
+    pub fn init_reserves(&mut self) -> Result<()> {
         // This function is used to add initial stablecoins to the reserves.
         // It is called during the initialization of the IRMA program.
         // let usdt = StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6)?;
@@ -540,7 +540,7 @@ impl StateMap {
         Ok(())
     }  
 
-    /// ReduceCirculations implementation
+    /// Distrubute (ReduceCirculations) implementation
     /// This now deals with mint_price being less than redemption_price (a period of deflation).
     /// If the price of the underlying reserve goes up with respect to USD, its exchange rate with IRMA
     /// would improve (i.e. IRMA would be worth less in terms of the reserve). In this case, the system
@@ -548,7 +548,7 @@ impl StateMap {
     /// the objective is always to preserve the backing, the system will not allow the mint price 
     /// to be less than the redemption price. Instead, it will simply set the redemption price to the mint price.
     /// NOTE: irma_amount is now scaled down by the backing_decimals of IRMA.
-    fn reduce_circulations(&mut self, quote_token: &str, irma_amount: u64) -> Result<()> {
+    fn distribute(&mut self, quote_token: &str, irma_amount: u64) -> Result<()> {
 
         require!(quote_token.len() > 2, CustomError::InvalidQuoteToken);
         let reserves = &mut self.reserves;
