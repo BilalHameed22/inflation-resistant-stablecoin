@@ -5,6 +5,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+# ahash = "0.8.12"
 anchor-client = "0.31.1"
 anchor-lang = "0.31.1"
 anchor-lang-idl-spec = "0.1.0"
@@ -14,15 +15,19 @@ fixed = { git = "https://github.com/blockworks-foundation/fixed.git", branch = "
 # solana-account-decoder = "~1.17.1"
 # solana-client = "~1.17.1"
 # solana-logger = "~1.17.1"
-# solana-program = "2.3.0"
+# solana-program = "2.2.2"
+# solana-address-lookup-table-interface = { version = "2.2.2" }
 # solana-program-test = "~1.17.1"
 # solana-rpc = "~1.17.1"
-solana-sdk = "2.3.0"
+# solana-sdk = "2.3.0"
+# solana-compute-budget-interface = { version = "2.3.0" }
+solana-sdk = "1.18.14"
+solana-sdk-ids = "1.18.14"
 spl-associated-token-account = "1.0.3"
 
 [profile.release]
 overflow-checks = true
-lto = "fat"
+# lto = "fat"
 codegen-units = 1
 
 [profile.release.build-override]

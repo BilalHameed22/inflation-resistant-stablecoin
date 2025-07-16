@@ -1,4 +1,5 @@
 #![allow(unexpected_cfgs)]
+#[cfg(feature = "idl-build")]
 // #![feature(trivial_bounds)]
 // use std::cmp::{
 //     PartialEq,
@@ -7,44 +8,125 @@
 // use bytemuck::{
 //     Pod,
 // };
-// use solana_sdk_ids::system_program;
-// use solana_program::{pubkey, pubkey::Pubkey};
-// use std::ffi::CStr;
-use bytemuck::bytes_of_mut;
+
+use anchor_lang::prelude::AccountInfo;
+use anchor_lang::prelude::AccountLoader;
+use anchor_lang::prelude::Context;
+use anchor_lang::prelude::CpiContext;
+use anchor_lang::prelude::msg;
+use anchor_lang::prelude::Program;
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::prelude::Rent;
+use anchor_lang::prelude::Signer;
+use anchor_lang::prelude::System;
+
 use anchor_lang::prelude::*;
-// use anchor_lang::{declare_id, program};
+
 use anchor_lang::{
     account,
     Accounts,
     // AnchorSerialize, 
     // AnchorDeserialize, 
-    // declare_id,
+    declare_id,
+    Discriminator,
     // program,
+    pubkey,
+    require_keys_neq,
     Result,
-    // ToAccountMetas, 
-    // ToAccountInfos,
+    // ToAccountMetas,
+    solana_program,
+    system_program,
     zero_copy
 };
+// use anchor_lang::system_program::ID;
 
-
-// use anchor_lang::ZeroCopy;
-// use crate::iopenbook::*;
-
-// Dummy CPI context and consume_given_events for demonstration
-// use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
-pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
-declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 
 pub mod iopenbook;
 pub mod pricing;
 
-use crate::pricing::{ /* Initialize, */ IrmaCommon};
-use crate::pricing::{ /* initialize, */ set_mint_price, mint_irma, redeem_irma};
-use crate::iopenbook::{EventHeap, Market, ConsumeEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-use crate::iopenbook::{/*OpenBookV2,*/ get_latest_slot, consume_given_events, MAX_NUM_EVENTS};
 
+use iopenbook::{EventHeap, Market, ConsumeEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
+use iopenbook::{/*OpenBookV2,*/ get_latest_slot, consume_given_events, MAX_NUM_EVENTS};
+use pricing::{
+    mint_irma,
+    redeem_irma,
+    set_mint_price,
+    StateMap, 
+    MAX_BACKING_COUNT
+};
 
-pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Result<()> {
+// #[no_mangle]
+// unsafe extern "Rust" fn __getrandom_v03_custom(
+//     dest: *mut u8,
+//     len: usize,
+// ) -> Result<(), Error> {
+//     Err(Error::UNSUPPORTED)
+// }
+
+// impl Default for AHasher {
+//     // let mut map: HashMap<i32, i32, BuildHasherDefault<AHasher>> = HashMap::default();
+//     // map.insert(13, 53);
+
+//     #[inline]
+//     fn default() -> AHasher {
+//         RandomState::with_fixed_keys().build_hasher()
+//     }
+// }
+
+// CPI context and consume_given_events for OpenBook V2
+// use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
+pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
+declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
+
+#[program]
+pub mod irma {
+    use super::*;
+
+    /// This is a one-time operation that sets up the IRMA pricing module.
+    /// Assume that the markets for the initial IRMA / reserve stablecoin pairs already exist.
+    /// This iniatializes only the pricing module for the intial stablecoin reserves, nothing else.
+    /// The "Init" data is allocated in a data account that is owned by the IRMA program.
+    /// The data is pre-allocated before the call, but empty.
+    pub fn initialize(ctx: Context<Init>) -> Result<()> {
+        pricing::init_pricing(ctx)
+    }
+
+    /// Add a new stablecoin to the reserves.
+    /// This is a permissioned instruction that can only be called by the IRMA program owner.
+    /// The minimum requirement is that the stablecoin has 100M circulating supply and is not a meme coin.
+    /// IRMA relies on pre-existing network effects of each of the reserve stablecoins.
+    pub fn add_stablecoin(ctx: Context<Init>, symbol: String, mint_address: Pubkey, decimals: u8) -> Result<()> {
+        pricing::add_stablecoin(ctx, &symbol, mint_address, decimals)
+    }
+
+    /// Remove a stablecoin from the reserves by its symbol.
+    /// WARNING: This actually removes the stablecoin from the reserves, so be careful when using it.
+    /// In order to continue to avoid runs, all reserve amount must be redeemed before removing a stablecoin.
+    /// This can be done without using much capital: use 100K IRMAs to redeem another stablecoin (B),
+    /// then disable or deactivate the stablecoin to be removed (A), and then do a loop of
+    /// 1. internally swapping 100k of stablecoin B for stablecoin A, and then
+    /// 2. externally swapping 100k of stablecoin A for 100k of stablecoin B (open market).
+    pub fn remove_stablecoin(ctx: Context<Init>, symbol: String) -> Result<()> {
+        pricing::remove_reserve(ctx, &symbol)
+    }
+
+    /// Deactivate a reserve stablecoin.
+    /// Deactivating should still include the stablecoin in all calculations.
+    /// The only action that is disabled should be the minting of IRMA using this reserve stablecoin.
+    /// This is done in preparation for removing the stablecoin from the reserves.
+    /// For orderly removal, first announce separate dates of deactivation and removal.
+    pub fn disable_reserve(ctx: Context<Init>, symbol: String) -> Result<()> {
+        pricing::disable_reserve(ctx, &symbol)
+    }
+
+    /// Crank the OpenBook V2 from client.
+    /// This function is called periodically (at least once per slot) to process events and update the IRMA state.
+    pub fn crank(ctx: Context<Crk>) -> Result<()> {
+        crank_market(ctx)
+    }
+}
+
+fn crank_market(ctx: Context<Crk>) -> Result<()> {
     let state = ctx.accounts.state.load_mut()?;
     let slots = get_latest_slot()?;
 
@@ -67,7 +149,7 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
         0,
     );
 
-    fn allocate_events<'info>() -> &'info mut EventHeap {
+    fn alloc_heap<'info>() -> &'info mut EventHeap {
         let heap = EventHeap {
             header: EventHeapHeader {
                 free_head: 0u16,
@@ -90,16 +172,16 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
         Box::leak(Box::new(heap))
     }
 
-    let program_id: &'info Pubkey = &IRMA_ID;
-    let events_account: Pubkey = Pubkey::find_program_address(&[b"eventheap".as_ref()], program_id).0;
-    let lamports: &'info mut u64 = Box::leak(Box::new(100000u64));
-    let event_heap: &'info mut EventHeap = allocate_events();
+    let program_id: &'static Pubkey = &IRMA_ID;
+    let events_acct: Pubkey = Pubkey::find_program_address(&[b"eventheap".as_ref()], program_id).0;
+    let lamports: &'static mut u64 = Box::leak(Box::new(100000u64));
+    let event_heap: &'_ mut EventHeap = alloc_heap();
 
-    let events_data: &'info mut [u8] = bytes_of_mut(event_heap);
-    let events_key: &'info mut Pubkey = Box::leak(Box::new(events_account));
+    let events_data: &'_ mut [u8] = bytemuck::bytes_of_mut(event_heap);
+    let events_key: &'_ mut Pubkey = Box::leak(Box::new(events_acct));
     msg!("Events account key: {:?}", events_key);
 
-    let events_info: AccountInfo<'info> = AccountInfo::new(
+    let events_info: AccountInfo<'_> = AccountInfo::new(
         events_key,
         false,
         false,
@@ -109,15 +191,13 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
         false,
         0,
     );
-    let events_info: &AccountInfo<'info> = Box::leak(Box::new(events_info));
+    let events_info: &AccountInfo<'_> = Box::leak(Box::new(events_info));
 
-    let signer_account_info: AccountInfo<'info> = ctx.accounts.signer.to_account_info();
-    let signer_account_info: &AccountInfo<'info> = Box::leak(Box::new(signer_account_info));
-    let system_program: AccountInfo<'info> = ctx.accounts.system_program.to_account_info();
-    let system_program: &AccountInfo<'info> = Box::leak(Box::new(system_program));
+    let signer_info: &AccountInfo<'_> = Box::leak(Box::new(ctx.accounts.signer.to_account_info()));
+    let sys_program: &AccountInfo<'_> = Box::leak(Box::new(ctx.accounts.system_program.to_account_info()));
 
-    fn allocate_market<'info>(ekey: Pubkey) -> &'info mut Market {
-        let market = Market {
+    fn alloc_mkt(ekey: Pubkey) -> Market {
+        Market {
             // PDA bump
             bump: 0u8,
             pad1: [0u8; 7],
@@ -212,8 +292,8 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
             // Cumulative taker volume in quote native units due to place take orders
             taker_volume_wo_oo: 0u128,
 
-            base_mint: Pubkey::from_str_const("BaseMint"), // IRMA mint
-            quote_mint: Pubkey::from_str_const("QuoteMint"), // Stablecoin mint
+            base_mint: Pubkey::new_from_array([0u8; 32]), //  IRMA mint
+            quote_mint: Pubkey::new_from_array([0u8; 32]), // Stablecoin mint
 
             market_base_vault: Pubkey::new_unique(),
             base_deposit_total: 100u64,
@@ -222,19 +302,19 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
             quote_deposit_total: 100u64,
 
             reserved: [0u8; 128],
-        };
-        Box::leak(Box::new(market))
+        }
     }
     
-    let market_account: Pubkey = Pubkey::find_program_address(&[b"market".as_ref()], program_id).0;
-    let lamports: &'info mut u64 = Box::leak(Box::new(100000u64));
-    let market: &'info mut Market = allocate_market(*events_key);
+    let market_acct: Pubkey = Pubkey::find_program_address(&[b"market".as_ref()], program_id).0;
+    let lamports: &'static mut u64 = Box::leak(Box::new(100000u64));
+    let boxed_market = Box::new(alloc_mkt(*events_key));
+    let market: &'static mut Market = Box::leak(boxed_market);
 
-    let market_data: &'info mut [u8] = bytes_of_mut(market);
-    let market_key: &'info mut Pubkey = Box::leak(Box::new(market_account));
+    let market_data: &'_ mut [u8] = bytemuck::bytes_of_mut(market);
+    let market_key: &'_ mut Pubkey = Box::leak(Box::new(market_acct));
     msg!("Market account key: {:?}", market_key);
 
-    let market_info: AccountInfo<'info> = AccountInfo::new(
+    let market_info: AccountInfo = AccountInfo::new(
         market_key,
         false,
         false,
@@ -244,15 +324,15 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
         false,
         0,
     );
-    let market_info: &AccountInfo<'info> = Box::leak(Box::new(market_info));
+    let market_info: &AccountInfo<'_> = Box::leak(Box::new(market_info));
 
     let this_ctx = CpiContext::new(
         dummy_info,
         ConsumeEvents {
-            consume_events_admin: Signer::try_from(signer_account_info).unwrap(),
-            event_heap: AccountLoader::<'info, EventHeap>::try_from(events_info).unwrap(),
-            market: AccountLoader::<'info, Market>::try_from(market_info).unwrap(),
-            system_program: Program::try_from(system_program).unwrap(),
+            consume_events_admin: Signer::try_from(signer_info).unwrap(),
+            event_heap: AccountLoader::<'_ , EventHeap>::try_from(events_info).unwrap(),
+            market: AccountLoader::<'_ , Market>::try_from(market_info).unwrap(),
+            system_program: Program::try_from(sys_program).unwrap(),
         },
     );
 
@@ -261,36 +341,36 @@ pub fn crank<'info>(ctx: &Context<'_, 'info, '_, '_, CrankIrma<'info>>) -> Resul
 }
 
 #[repr(C)]
-pub enum OpenBookEvent<'a> {
-    BuyIRMA {
+enum ObEvent<'a> {
+    Buy {
         trader: Pubkey,
-        quote_token: &'a str,
+        token: &'a str,
         amount: u64,
     },
-    SellIRMA {
+    Sell {
         trader: Pubkey,
-        quote_token: &'a str,
-        irma_amount: u64,
+        token: &'a str,
+        amount: u64,
     },
 }
 
-pub fn handle_openbook_event(
-    ctx: Context<IrmaCommon>,
-    event: OpenBookEvent,
+fn handle_ob_event(
+    ctx: Context<Common>,
+    event: ObEvent,
 ) -> Result<()> {
     match event {
-        OpenBookEvent::BuyIRMA { trader: _, quote_token, amount } => {
-            mint_irma(ctx, quote_token, amount)?;
+        ObEvent::Buy { trader: _, token, amount } => {
+            mint_irma(ctx, token, amount)?;
         }
-        OpenBookEvent::SellIRMA { trader: _, quote_token, irma_amount } => {
-            redeem_irma(ctx, quote_token, irma_amount)?;
+        ObEvent::Sell { trader: _, token, amount } => {
+            redeem_irma(ctx, token, amount)?;
         }
     }
     Ok(())
 }
 
-pub fn oracle_inflation_input<'info>(
-    ctx: Context<'_, '_, '_, 'info, IrmaCommon<'info>>,
+fn oracle_input<'info>(
+    ctx: Context<'_, '_, '_, 'info, Common<'info>>,
     inflation_percent: f64,
     stablecoin: &str,
     stablecoin_price_usd: f64,
@@ -306,26 +386,46 @@ pub fn oracle_inflation_input<'info>(
 
 
 #[derive(Accounts)]
-pub struct CrankIrma<'info> {
-    // Add the accounts your crank function needs here
-    #[account(init, space = IrmaState::LEN, payer = signer)] // , seeds = [b"irma_state"], bump)]
-    pub state: AccountLoader<'info, IrmaState>,
+pub struct Crk<'info> {
+    #[account(init, space = State::LEN, payer = signer)]
+    pub state: AccountLoader<'info, State>,
     #[account(mut, signer)]
     pub signer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[account(zero_copy)]
-pub struct IrmaState {
-    pub pubkey: Pubkey, // Public key of the account
+pub struct State {
+    pub pubkey: Pubkey,
     pub mint_price: f64,
-    pub last_updated: i64, // Timestamp of the last update
-    pub lamports: u64, // Lamports for the account
-    padding1: [u8; 7], // Padding to align the struct size
-    pub stablecoin: u8, // Stablecoin enum value
-    padding2: [u8; 7], // Padding to align the struct size
-    pub bump: u8, // Bump seed for PDA
+    pub last_updated: i64,
+    pub lamports: u64,
+    padding1: [u8; 7],
+    pub stablecoin: u8,
+    padding2: [u8; 7],
+    pub bump: u8,
 }
-impl IrmaState {
-    pub const LEN: usize = 24 + 32 + 8; // 8 bytes for f64, 8 bytes for i64/u64, and 32 for Pubkey
+impl State {
+    pub const LEN: usize = 24 + 32 + 8;
+}
+
+
+#[derive(Accounts)]
+pub struct Init<'info> {
+    #[account(init, space=120*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+    pub state: Account<'info, StateMap>,
+    #[account(mut)]
+    pub irma_admin: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Common<'info> {
+    #[account(mut, seeds=[b"state".as_ref()], bump)]
+    pub state: Account<'info, StateMap>,
+    #[account(mut)]
+    pub trader: Signer<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: Program<'info, System>,
 }

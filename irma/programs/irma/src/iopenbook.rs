@@ -1,8 +1,28 @@
 // use solana_sdk_ids::system_program;
+// #[cfg(feature = "idl-build")]
 use anchor_lang::prelude::*;
+use anchor_lang::prelude::borsh;
+use anchor_lang::prelude::AccountInfo;
+use anchor_lang::prelude::AccountLoader;
+use anchor_lang::prelude::CpiContext;
+use anchor_lang::prelude::Program;
+// use anchor_lang::prelude::ProgramError;
+use anchor_lang::prelude::Pubkey;
+use anchor_lang::prelude::Rent;
+use anchor_lang::prelude::Signer;
+use anchor_lang::prelude::System;
+use anchor_lang::prelude::SolanaSysvar;
+use anchor_lang::Discriminator;
+use anchor_lang::error;
+use anchor_lang::Key;
+// use anchor_lang::ToAccountInfo;
+use anchor_lang_idl_spec::IdlTypeDef;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use static_assertions::const_assert_eq;
+use std::collections::BTreeMap;
 use std::mem::size_of;
+use std::mem::align_of;
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
@@ -19,14 +39,16 @@ use anchor_lang::{
     AnchorSerialize, 
     AnchorDeserialize, 
     declare_id,
+    error_code,
+    require_keys_neq,
     Result,
     // ToAccountMetas, 
     // ToAccountInfos,
-    zero_copy
+    zero_copy,
 };
 
 // use crate::iopenbook::*;
-// use solana_program::ProgramError;
+// use anchor_lang::solana_program; // ::program_error::ProgramError as SolanaProgError;
 
 // Dummy CPI context and consume_given_events for demonstration
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
@@ -242,7 +264,7 @@ pub const MAX_ORDERTREE_NODES: usize = 1024;
 /// Each InnerNode has exactly two children, which are either InnerNodes themselves,
 /// or LeafNodes. The children share the top `prefix_len` bits of `key`. The left
 /// child has a 0 in the next bit, and the right a 1.
-#[derive(Copy, Clone, bytemuck::Zeroable, AnchorSerialize, AnchorDeserialize)]
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct InnerNode {
     pub tag: u8, // NodeTag
@@ -496,6 +518,7 @@ pub enum OrderTreeType {
     Asks,
 }
 
+
 impl OrderTreeType {
     pub fn side(&self) -> Side {
         match *self {
@@ -505,7 +528,25 @@ impl OrderTreeType {
     }
 }
 
-#[zero_copy]
+trait MapTrait {
+    fn get_full_path() -> String;
+    fn create_type() -> Option<IdlTypeDef>;
+    fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>);
+}
+impl MapTrait for u32 {
+    fn get_full_path() -> String {
+        "u32".to_string()
+    }
+    fn create_type() -> Option<IdlTypeDef> {
+        // Your logic here
+        None
+    }
+    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+        // Your logic here
+    }
+}
+
+#[account(zero_copy)]
 pub struct OrderTreeRoot {
     pub maybe_node: NodeHandle,
     pub leaf_count: u32,
@@ -516,7 +557,7 @@ const_assert_eq!(std::mem::size_of::<OrderTreeRoot>() % 8, 0);
 /// A binary tree on AnyNode::key()
 ///
 /// The key encodes the price in the top 64 bits.
-#[zero_copy]
+#[account(zero_copy)]
 pub struct OrderTreeNodes {
     pub order_tree_type: u8, // OrderTreeType, but that's not POD
     pub padding: [u8; 3],
