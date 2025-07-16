@@ -6,6 +6,7 @@ use std::string::String;
 use std::option::Option;
 // use anchor_lang_idl_spec::IdlType::Option as IdlOption;
 // use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
+
 use anchor_lang_idl_spec::{
     IdlType,
     IdlTypeDef, 
@@ -36,7 +37,6 @@ declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 
 /// IRMA module
 /// FIXME: the decimals are all assumed to be zero, which is not true for all stablecoins.
-
 
 pub fn init_pricing(ctx: Context<Init>) -> Result<()> {
     msg!("Greetings from: {:?}", ctx.program_id);
