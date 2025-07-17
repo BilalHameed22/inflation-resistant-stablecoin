@@ -113,10 +113,10 @@ pub fn validate_reserve(ctx: Context<Common>, reserve: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_params(stateMap: &StateMap, quote_token: &str) -> Result<()> {
-    require!(stateMap.reserves.len() > 0, CustomError::InvalidReserveList);
-    require!(stateMap.contains_reserve(quote_token), CustomError::InvalidQuoteToken);
-    let stablecoin = stateMap.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+fn validate_params(state_map: &StateMap, quote_token: &str) -> Result<()> {
+    require!(state_map.reserves.len() > 0, CustomError::InvalidReserveList);
+    require!(state_map.contains_reserve(quote_token), CustomError::InvalidQuoteToken);
+    let stablecoin = state_map.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
     require!(stablecoin.active, CustomError::InvalidQuoteToken);
     require!(stablecoin.backing_decimals > 0, CustomError::InvalidQuoteToken);
     require!(stablecoin.mint_price > 0.0, CustomError::InvalidAmount);
@@ -128,11 +128,11 @@ fn validate_params(stateMap: &StateMap, quote_token: &str) -> Result<()> {
 /// This should be called for every backing stablecoin supported, only once per day
 /// because Truflation updates the inflation data only once per day.
 pub fn set_mint_price(ctx: Context<Common>, quote_token: &str, mint_price: f64) -> Result<()> {
-    let stateMap = &mut ctx.accounts.state;
-    validate_params(&(*stateMap), quote_token)?;
+    let state_map = &mut ctx.accounts.state;
+    validate_params(&(*state_map), quote_token)?;
     require!(mint_price > 0.0, CustomError::InvalidAmount);
     require!(mint_price < 100.0, CustomError::InvalidAmount); // sanity check, mint price should not be too high
-    let stablecoin = stateMap.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    let stablecoin = state_map.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
     stablecoin.mint_price = mint_price;
     Ok(())
 }
@@ -141,16 +141,16 @@ pub fn set_mint_price(ctx: Context<Common>, quote_token: &str, mint_price: f64) 
 /// Input amount is  in quote token's smallest unit (e.g. 1 USDT = 10^6, 1 USDC = 10^6, etc.)
 /// The mint price is the price of IRMA in terms of the quote token, which is set by the Truflation oracle.
 pub fn mint_irma(ctx: Context<Common>, quote_token: &str, amount: u64) -> Result<()> {
-    let stateMap = &mut ctx.accounts.state;
-    validate_params(&(*stateMap), quote_token)?;
+    let state_map = &mut ctx.accounts.state;
+    validate_params(&(*state_map), quote_token)?;
 
     if amount == 0 { return Ok(()); };
 
-    let stablecoin = stateMap.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    let stablecoin = state_map.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
     let curr_price: f64 = stablecoin.mint_price;
     let amount = (amount as f64 / (10.0_f64).powf(stablecoin.backing_decimals as f64)) as f64;
 
-    let stablecoin = stateMap.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    let stablecoin = state_map.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
     stablecoin.backing_reserves += amount.ceil() as u64; // backing should not have a fractional part
     stablecoin.irma_in_circulation += (amount / curr_price).ceil() as u64;
 
@@ -161,12 +161,12 @@ pub fn mint_irma(ctx: Context<Common>, quote_token: &str, amount: u64) -> Result
 /// FIXME: If resulting redemption price increases by more than 0.0000001, then actual redemption price 
 /// should be updated immediately.
 pub fn redeem_irma(ctx: Context<Common>, quote_token: &str, irma_amount: u64) -> Result<()> {
-    let stateMap = &mut ctx.accounts.state;
-    validate_params(&(*stateMap), quote_token)?;
+    let state_map = &mut ctx.accounts.state;
+    validate_params(&(*state_map), quote_token)?;
 
     if irma_amount == 0 { return Ok(()) };
 
-    let state = stateMap.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+    let state = state_map.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
     // There is a redemption rule: every redemption is limited to 100k IRMA or 10% of the IRMA in circulation (for
     // the quote token) whichever is smaller.
     let circulation: u64 = state.irma_in_circulation;
@@ -178,6 +178,12 @@ pub fn redeem_irma(ctx: Context<Common>, quote_token: &str, irma_amount: u64) ->
     ctx.accounts.state.distribute(quote_token, irma_amount.ceil() as u64)?;
 
     Ok(())
+}
+
+pub fn list_reserves(ctx: Context<Common>) -> String {
+    let state_map = &mut ctx.accounts.state;
+    let sorted_list = state_map.list_reserves();
+    sorted_list.join(", ")
 }
 
 // #[account]
@@ -262,32 +268,62 @@ impl StateMap {
     /// Add a stablecoin to the reserves, maintaining the order by symbol.
     pub fn add_stablecoin(&mut self, stablecoin: StableState) {
         if self.contains_reserve(&stablecoin.symbol) {
-            msg!("MapTrait {} already exists in reserves, skipping addition.", stablecoin.symbol);
+            msg!("Stablecoin {} already exists in reserves, skipping addition.", stablecoin.symbol);
             return;
         }
         let clone = stablecoin.clone();
         let symbol = clone.symbol; // Get the symbol from the stablecoin
-        let i = self.reserves.partition_point(|e| &e.symbol > &symbol);
+        let i = self.reserves.partition_point(|e| e.symbol < symbol.to_string());
         self.reserves.insert(i, stablecoin);
     }
 
     /// Get a stablecoin by its symbol.
     pub fn get_stablecoin(&self, symbol: &str) -> Option<StableState> {
-        if !self.contains_reserve(symbol) {
-            msg!("MapTrait {} not found in reserves.", symbol);
+        if symbol.len() < 2 {
+            msg!("Input {} is too short to be a valid symbol.", symbol);
             return None;
         }
-        let i = self.reserves.partition_point(|e| e.symbol > symbol.to_string());
-        Some(self.reserves.get(i - 1)?.clone())
+        if !self.contains_reserve(symbol) {
+            msg!("Symbol {} not found in reserves.", symbol);
+            return None;
+        }
+        if self.reserves.len() == 1 {
+            if self.reserves[0].symbol == symbol {
+                return Some(self.reserves[0].clone());
+            }
+            return None;
+        }
+        let i = self.reserves.partition_point(|e| e.symbol < symbol.to_string());
+        if i >= self.reserves.len() {
+            msg!("Symbol {} not found in reserves.", symbol);
+            return None;
+        }
+        msg!("get_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        Some(self.reserves.get(i)?.clone())
     }
 
     pub fn get_mut_stablecoin(&mut self, symbol: &str) -> Option<&mut StableState> {
-        if !self.contains_reserve(symbol) {
-            msg!("MapTrait {} not found in reserves.", symbol);
+        if symbol.len() < 2 {
+            msg!("Input {} is too short to be a valid symbol.", symbol);
             return None;
         }
-        let i = self.reserves.partition_point(|e| e.symbol > symbol.to_string());
-        Some(self.reserves.get_mut(i - 1)?)
+        if !self.contains_reserve(symbol) {
+            msg!("Input {} not found in reserves.", symbol);
+            return None;
+        }
+        if self.reserves.len() == 1 {
+            if self.reserves[0].symbol == symbol {
+                return Some(&mut self.reserves[0]);
+            }
+            return None;
+        }
+        let i = self.reserves.partition_point(|e| e.symbol < symbol.to_string());
+        if i >= self.reserves.len() {
+            msg!("Symbol {} not found in reserves, index: {}", symbol, i);
+            return None;
+        }
+        msg!("get_mut_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        Some(self.reserves.get_mut(i)?)
     }
 
     pub fn get_stablecoin_symbol(&self, mint_address: prelude::Pubkey) -> Option<String> {
@@ -386,7 +422,14 @@ impl StateMap {
         msg!("sorted reserves {}", self.reserves.iter().map(|e| e.symbol.clone()).collect::<Vec<_>>().join(", "));
         msg!("Vec length: {:?}", self.reserves.len());
         Ok(())
-    }  
+    } 
+
+    pub fn list_reserves(&self) -> Vec<String> {
+        let sorted_reserves = self.reserves.iter()
+            .map(|e| e.symbol.clone())
+            .collect::<Vec<_>>();
+        sorted_reserves
+    }
 
     /// Distrubute (ReduceCirculations) implementation
     /// This now deals with mint_price being less than redemption_price (a period of deflation).
