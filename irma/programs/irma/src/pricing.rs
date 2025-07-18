@@ -298,7 +298,9 @@ impl StateMap {
             msg!("Symbol {} not found in reserves.", symbol);
             return None;
         }
-        msg!("get_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        if cfg!(debug_assertions) {
+            msg!("get_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        }
         Some(self.reserves.get(i)?.clone())
     }
 
