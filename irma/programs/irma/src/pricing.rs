@@ -30,7 +30,9 @@ use crate::{Init, Common, Maint};
 // The number of stablecoins that are initially supported by the IRMA program.
 pub const BACKING_COUNT: usize = 6 as usize;
 // Maximum number of stablecoins supported
-// This is limited by the maximum size of the account data (10,240 bytes)
+// This is limited by the maximum size of the account data (10,240 bytes).
+// Each stablecoin entry in the reserves requires approximately 120 bytes of storage.
+// Therefore, the maximum number of stablecoins is calculated as 10,240 / 120 = 85 (rounded down).
 pub const MAX_BACKING_COUNT: usize = 85;
 
 declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
