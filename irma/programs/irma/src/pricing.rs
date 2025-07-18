@@ -22,8 +22,7 @@ use anchor_lang::prelude::*;
 use Vec;
 use std::collections::BTreeMap;
 
-use crate::Init;
-use crate::Common;
+use crate::{Init, Common, Maint};
 // use crate::StateMap;
 // use crate::StableState;
 // use crate::IRMA;
@@ -31,7 +30,10 @@ use crate::Common;
 // The number of stablecoins that are initially supported by the IRMA program.
 pub const BACKING_COUNT: usize = 6 as usize;
 // Maximum number of stablecoins supported
-pub const MAX_BACKING_COUNT: usize = 100;
+// This is limited by the maximum size of the account data (10,240 bytes).
+// Each stablecoin entry in the reserves requires approximately 120 bytes of storage.
+// Therefore, the maximum number of stablecoins is calculated as 10,240 / 120 = 85 (rounded down).
+pub const MAX_BACKING_COUNT: usize = 85;
 
 declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 
@@ -58,7 +60,7 @@ pub fn init_pricing(ctx: Context<Init>) -> Result<()> {
 
 /// The whole purpose for using a BTreeMap (now a Vec) is to allow for easy addition of new stablecoins.
 pub fn add_stablecoin(
-        ctx: Context<Init>, 
+        ctx: Context<Maint>, 
         symbol: &str, 
         mint_address: prelude::Pubkey,
         backing_decimals: u8) -> Result<()> 
@@ -75,7 +77,7 @@ pub fn add_stablecoin(
 }
 
 /// Remove a stablecoin from the reserves by its symbol.
-pub fn remove_reserve(ctx: Context<Init>, symbol: &str) -> Result<()> {
+pub fn remove_reserve(ctx: Context<Maint>, symbol: &str) -> Result<()> {
     let state = &mut ctx.accounts.state;
     if !state.contains_reserve(symbol) {
         msg!("Stablecoin {} not found in reserves.", symbol);
@@ -87,7 +89,7 @@ pub fn remove_reserve(ctx: Context<Init>, symbol: &str) -> Result<()> {
 }
 
 /// Deactivate a reserve stablecoin.
-pub fn disable_reserve(ctx: Context<Init>, symbol: &str) -> Result<()> {
+pub fn disable_reserve(ctx: Context<Maint>, symbol: &str) -> Result<()> {
     let state = &mut ctx.accounts.state;
     if !state.contains_reserve(symbol) {
         msg!("Stablecoin {} not found in reserves.", symbol);

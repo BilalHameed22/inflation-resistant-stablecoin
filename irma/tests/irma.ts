@@ -19,12 +19,6 @@ describe("irma", () => {
   let stateBump: number;
 
   before(async () => {
-    // Find PDA for state
-    [statePda, stateBump] = anchor.web3.PublicKey.findProgramAddressSync(
-      [stateSeed],
-      program.programId
-    );
-
     // Airdrop SOL to irmaAdmin for testing
     const sig = await provider.connection.requestAirdrop(
       irmaAdmin.publicKey,
@@ -34,7 +28,13 @@ describe("irma", () => {
     await provider.connection.confirmTransaction(sig, config);
   });
 
-  it("Initializes IRMA state", async () => {
+  it("Initializes IRMA state, then adds a stablecoin", async () => {
+    // Find PDA for state
+    [statePda, stateBump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [stateSeed],
+      program.programId
+    );
+
     await program.methods
       .initialize()
       .accounts({
@@ -44,6 +44,8 @@ describe("irma", () => {
       })
       .signers([irmaAdmin])
       .rpc();
+
+    console.log("IRMA state initialized with PDA:", statePda.toBase58());
 
     // Fetch the state account and check values
     const stateAccount = await program.account.stateMap.fetch(statePda);
@@ -56,6 +58,8 @@ describe("irma", () => {
     const mintAddress = anchor.web3.Keypair.generate().publicKey;
     const decimals = 6;
 
+    console.log("Adding stablecoin:", symbol, "Mint Address:", mintAddress.toBase58(), "Decimals:", decimals);
+
     await program.methods
       .addStablecoin(symbol, mintAddress, decimals)
       .accounts({
@@ -65,6 +69,8 @@ describe("irma", () => {
       })
       .signers([irmaAdmin])
       .rpc();
+    
+    console.log("Stablecoin added:", symbol);
 
     // Fetch and check state changes as needed
     const stateAccount = await program.account.stateMap.fetch(statePda);
