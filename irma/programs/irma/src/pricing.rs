@@ -273,7 +273,7 @@ impl StateMap {
         }
         let clone = stablecoin.clone();
         let symbol = clone.symbol; // Get the symbol from the stablecoin
-        let i = self.reserves.partition_point(|e| e.symbol < symbol.to_string());
+        let i = self.reserves.partition_point(|e| e.symbol.as_str() < symbol.as_str());
         self.reserves.insert(i, stablecoin);
     }
 
