@@ -293,7 +293,7 @@ impl StateMap {
             }
             return None;
         }
-        let i = self.reserves.partition_point(|e| e.symbol < symbol.to_string());
+        let i = self.reserves.partition_point(|e| e.symbol.as_str() < symbol);
         if i >= self.reserves.len() {
             msg!("Symbol {} not found in reserves.", symbol);
             return None;
