@@ -321,10 +321,14 @@ impl StateMap {
         }
         let i = self.reserves.partition_point(|e| e.symbol.as_str() < symbol);
         if i >= self.reserves.len() {
-            msg!("Symbol {} not found in reserves, index: {}", symbol, i);
+            if cfg!(debug_assertions) {
+                msg!("Symbol {} not found in reserves, index: {}", symbol, i);
+            }
             return None;
         }
-        msg!("get_mut_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        if cfg!(debug_assertions) {
+            msg!("get_mut_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        }
         Some(self.reserves.get_mut(i)?)
     }
 
