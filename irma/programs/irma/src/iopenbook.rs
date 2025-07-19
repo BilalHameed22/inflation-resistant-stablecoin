@@ -277,7 +277,7 @@ pub struct InnerNode {
     pub key: u128,
 
     /// indexes into `BookSide::nodes`
-    pub children: [NodeHandle; 2],
+    pub children: [u32; 2],
 
     /// The earliest expiry timestamp for the left and right subtrees.
     ///
@@ -350,7 +350,7 @@ const_assert_eq!(size_of::<LeafNode>() % 8, 0);
 pub struct FreeNode {
     pub(crate) tag: u8, // NodeTag
     pub(crate) padding: [u8; 3],
-    pub(crate) next: NodeHandle,
+    pub(crate) next: u32,
     pub(crate) reserved: [u8; NODE_SIZE - 16],
     // essential to make AnyNode alignment the same as other node types
     pub(crate) force_align: u64,
@@ -372,8 +372,9 @@ const_assert_eq!(align_of::<AnyNode>(), 8);
 // const_assert_eq!(align_of::<AnyNode>(), align_of::<InnerNode>());
 // const_assert_eq!(size_of::<AnyNode>(), size_of::<LeafNode>());
 // const_assert_eq!(align_of::<AnyNode>(), align_of::<LeafNode>());
-// const_assert_eq!(size_of::<AnyNode>(), size_of::<FreeNode>());
-// const_assert_eq!(align_of::<AnyNode>(), align_of::<FreeNode>());
+const_assert_eq!(size_of::<AnyNode>(), size_of::<FreeNode>());
+const_assert_eq!(align_of::<AnyNode>(), align_of::<FreeNode>());
+
 
 #[derive(
     Eq,
@@ -528,27 +529,9 @@ impl OrderTreeType {
     }
 }
 
-trait MapTrait {
-    fn get_full_path() -> String;
-    fn create_type() -> Option<IdlTypeDef>;
-    fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>);
-}
-impl MapTrait for u32 {
-    fn get_full_path() -> String {
-        "u32".to_string()
-    }
-    fn create_type() -> Option<IdlTypeDef> {
-        // Your logic here
-        None
-    }
-    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
-        // Your logic here
-    }
-}
-
 #[account(zero_copy)]
 pub struct OrderTreeRoot {
-    pub maybe_node: NodeHandle,
+    pub maybe_node: u32,
     pub leaf_count: u32,
 }
 const_assert_eq!(std::mem::size_of::<OrderTreeRoot>(), 8);
@@ -563,23 +546,22 @@ pub struct OrderTreeNodes {
     pub padding: [u8; 3],
     pub bump_index: u32,
     pub free_list_len: u32,
-    pub free_list_head: NodeHandle,
+    pub free_list_head: u32,
     pub reserved: [u8; 512],
     pub nodes: [AnyNode; MAX_ORDERTREE_NODES],
 }
 const_assert_eq!(
     std::mem::size_of::<OrderTreeNodes>(),
-    1 + 3 + 4 * 2 + 4 + 512 + 88 * 1024
+    1 + 3 + 4 * 2 + 4 + 512 + 88 * MAX_ORDERTREE_NODES
 );
-const_assert_eq!(std::mem::size_of::<OrderTreeNodes>(), 90640);
+const_assert_eq!(std::mem::size_of::<OrderTreeNodes>(), 528 + 88 * MAX_ORDERTREE_NODES);
 const_assert_eq!(std::mem::size_of::<OrderTreeNodes>() % 8, 0);
 
-pub type NodeHandle = u32;
 const NODE_SIZE: usize = 88;
 
 /// Reference to a node in a book side component
 pub struct BookSideOrderHandle {
-    pub node: NodeHandle,
+    pub node: u32,
     pub order_tree: BookSideOrderTree,
 }
 
@@ -594,7 +576,7 @@ const_assert_eq!(
     std::mem::size_of::<BookSide>(),
     std::mem::size_of::<OrderTreeNodes>() + 6 * std::mem::size_of::<OrderTreeRoot>() + 256
 );
-const_assert_eq!(std::mem::size_of::<BookSide>(), 90944);
+const_assert_eq!(std::mem::size_of::<BookSide>(), 832 + 88 * MAX_ORDERTREE_NODES);
 const_assert_eq!(std::mem::size_of::<BookSide>() % 8, 0);
 
 #[derive(
