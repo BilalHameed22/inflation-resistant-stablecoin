@@ -3,7 +3,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::prelude::borsh;
 use anchor_lang::prelude::AccountInfo;
-use anchor_lang::prelude::AccountLoader;
 use anchor_lang::prelude::CpiContext;
 use anchor_lang::prelude::Program;
 // use anchor_lang::prelude::ProgramError;
@@ -23,6 +22,7 @@ use static_assertions::const_assert_eq;
 use std::collections::BTreeMap;
 use std::mem::size_of;
 use std::mem::align_of;
+use std::marker::Copy;
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
@@ -42,9 +42,6 @@ use anchor_lang::{
     error_code,
     require_keys_neq,
     Result,
-    // ToAccountMetas, 
-    // ToAccountInfos,
-    zero_copy,
 };
 
 // use crate::iopenbook::*;
@@ -65,7 +62,8 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
         space = 16 + MAX_NUM_EVENTS as usize * (EVENT_SIZE + 8) + 64,
         payer = consume_events_admin,
     )]
-    pub event_heap: AccountLoader<'info, EventHeap>,
+    /// CHECK: This uses untyped bytes, validated in the instruction logic.
+    pub event_heap: AccountInfo<'info>,
     #[account(mut)]
     pub consume_events_admin: Signer<'info>,
     #[account(
@@ -74,7 +72,8 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
         space = 840,
         payer = consume_events_admin,
     )]
-    pub market: AccountLoader<'info, Market>,
+    /// CHECK: This uses untyped bytes, validated in the instruction logic.
+    pub market: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -89,7 +88,8 @@ pub fn consume_given_events<'info>(
     Ok(())
 }
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Debug)]
 pub struct EventHeap {
     pub header: EventHeapHeader,
     pub nodes: [EventNode; MAX_NUM_EVENTS as usize],
@@ -101,7 +101,8 @@ const_assert_eq!(
 );
 
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Debug)]
 pub struct OracleConfig {
     pub conf_filter: f64,
     pub max_staleness_slots: i64,
@@ -111,7 +112,8 @@ const_assert_eq!(size_of::<OracleConfig>(), 8 + 8 + 72);
 const_assert_eq!(size_of::<OracleConfig>(), 88);
 const_assert_eq!(size_of::<OracleConfig>() % 8, 0);
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Debug)]
 pub struct Market {
     /// PDA bump
     pub bump: u8,
@@ -269,7 +271,8 @@ pub enum Side {
 }
 
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Debug)]
 pub struct EventHeapHeader {
     pub free_head: u16,
     pub used_head: u16,
@@ -280,7 +283,8 @@ pub struct EventHeapHeader {
 const_assert_eq!(std::mem::size_of::<EventHeapHeader>(), 16);
 const_assert_eq!(std::mem::size_of::<EventHeapHeader>() % 8, 0);
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Copy, Debug)]
 pub struct EventNode {
     pub next: u16,
     pub prev: u16,
@@ -297,7 +301,8 @@ impl EventNode {
 }
 
 const EVENT_SIZE: usize = 144;
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Copy, Debug)]
 pub struct AnyEvent {
     pub event_type: u8,
     pub padding: [u8; 143],
@@ -316,9 +321,8 @@ pub enum EventType {
     Out,
 }
 
-#[derive(
-    Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, AnchorSerialize, AnchorDeserialize,
-)]
+#[account]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct FillEvent {
     pub event_type: u8,
@@ -346,9 +350,8 @@ pub struct FillEvent {
 const_assert_eq!(size_of::<FillEvent>() % 8, 0);
 const_assert_eq!(size_of::<FillEvent>(), EVENT_SIZE);
 
-#[derive(
-    Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, AnchorSerialize, AnchorDeserialize,
-)]
+#[account]
+#[derive(PartialEq, Debug)]
 #[repr(C)]
 pub struct OutEvent {
     pub event_type: u8,
@@ -366,18 +369,7 @@ const_assert_eq!(size_of::<OutEvent>(), EVENT_SIZE);
 
 // From OpenBook V2 order_type.rs
 
-#[derive(
-    Eq,
-    PartialEq,
-    Copy,
-    Clone,
-    TryFromPrimitive,
-    IntoPrimitive,
-    Debug,
-    AnchorSerialize,
-    AnchorDeserialize,
-)]
-#[repr(u8)]
+#[derive(PartialEq, Debug)]
 pub enum BookSideOrderTree {
     Fixed = 0,
     OraclePegged = 1,
@@ -475,10 +467,10 @@ pub enum SideAndOrderTree {
 }
 
 
-    #[error_code]
-    pub enum OpenBookError {
-        #[msg("Invalid order post-market provided.")]
-        InvalidOrderPostMarket,
-        #[msg("Invalid order post-only provided.")]
-        InvalidOrderPostIOC,
-    }
+#[error_code]
+pub enum OpenBookError {
+    #[msg("Invalid order post-market provided.")]
+    InvalidOrderPostMarket,
+    #[msg("Invalid order post-only provided.")]
+    InvalidOrderPostIOC,
+}
