@@ -50,7 +50,7 @@ use anchor_lang::{
 // Dummy CPI context and consume_given_events for demonstration
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
 
-declare_id!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
+pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
 // Dummy struct for CPI context
 pub struct OpenBookV2;
 
