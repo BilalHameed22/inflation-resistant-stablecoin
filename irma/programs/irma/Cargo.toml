@@ -9,36 +9,20 @@ crate-type = ["cdylib", "lib"]
 name = "irma"
 
 [features]
-default = ["idl-build"]
+# default = ["idl-build"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 # no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+# idl-build = ["anchor-lang/idl-build"]
 # anchor-debug = []
 # custom-heap = []
 # custom-panic = []
 
-
 [dependencies]
-# ahash = { workspace = true, features = ["compile-time-rng"] }
-anchor-lang = { workspace = true, features = ["event-cpi"] }
-anchor-lang-idl-spec = { workspace = true }
-# anchor-spl = { workspace = true }
-# arbitrary = { version = "~1.0", features = ["derive"], optional = true }
-# arrayref = "0.3.6"
-bytemuck = { version = "1.20.0", features = ["derive", "min_const_generics"] }
-# default-env = "0.1.1"
-# derivative = "2.2.0"
+anchor-lang = "0.27.0"
+openbook-v2 = { workspace = true, features = ["cpi"] }
+solana-program = { workspace = true }
 fixed = { workspace = true, features = ["debug-assert-in-release"] }
-itertools = "0.10.3"
-num_enum = "0.5.1"
-# pyth-sdk-solana = { workspace = true }
-solana-security-txt = "1.1.1"
-# solana-program = { workspace = true }
-# solana-sdk = "2.3.0"
-# solana-compute-budget-interface = { version = "2.3.0" }
-static_assertions = "1.1"
-# solana-sdk-ids = "2.2.1"
-# switchboard-program = ">=0.2.0"
-# switchboard-solana = "0.29.99"
+static_assertions = "1.1.0"
+anchor-lang-idl-spec = "0.1.0"

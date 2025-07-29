@@ -1,3 +1,6 @@
+
+// NOTE: This file is no longer used. Insted, we are linking with the OpenBook V2 program
+//
 // use solana_sdk_ids::system_program;
 // #[cfg(feature = "idl-build")]
 use anchor_lang::prelude::*;
@@ -77,13 +80,26 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
     pub system_program: Program<'info, System>,
 }
 
-// Dummy function for slot fetching
-pub fn get_latest_slot() -> anchor_lang::Result<u64> {
-    Ok(0)
+#[derive(Accounts)]
+pub struct ConsumeGivenEvents<'info> {
+    #[account(mut)]
+    pub consume_events_admin: Signer<'info>,
+    /// CHECK: This uses untyped bytes, validated in the instruction logic.
+    #[account(
+        init,
+        // 10240 bytes is max space to allocate with init constraint
+        space = 16 + MAX_NUM_EVENTS as usize * (EVENT_SIZE + 8) + 64,
+        payer = consume_events_admin,
+    )]
+    pub market: AccountInfo<'info>,
+    /// CHECK: This uses untyped bytes, validated in the instruction logic.
+    pub event_heap: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
 }
+
 pub fn consume_given_events<'info>(
-    _ctx: CpiContext<'_, '_, '_, 'info, ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */>>, 
-    _slots: u64
+    _ctx: CpiContext<'_, '_, '_, 'info, ConsumeGivenEvents<'info /*, ToAccountInfos, ToAccountMetas */>>, 
+    _slots: Vec<u64>
 ) -> Result<()> {
     Ok(())
 }

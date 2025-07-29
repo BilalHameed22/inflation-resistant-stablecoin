@@ -13,9 +13,11 @@ describe("irma", () => {
   if (!program) throw new Error("Program 'irma' not found in anchor.workspace");
 
   // Example keypairs
-  const irmaAdmin = anchor.web3.Keypair.generate();
+  const irmaAdmin = provider.wallet; // anchor.web3.Keypair.generate();
   const stateSeed = Buffer.from("state");
+  const crankSeed = Buffer.from("crank_state");
   let statePda: anchor.web3.PublicKey;
+  let crankPda: anchor.web3.PublicKey;
   let stateBump: number;
 
   before(async () => {
@@ -41,8 +43,8 @@ describe("irma", () => {
         state: statePda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
       })
-      .signers([irmaAdmin])
       .rpc();
 
     console.log("IRMA state initialized with PDA:", statePda.toBase58());
@@ -66,14 +68,38 @@ describe("irma", () => {
         state: statePda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
       })
-      .signers([irmaAdmin])
       .rpc();
     
     console.log("Stablecoin added:", symbol);
 
     // Fetch and check state changes as needed
     const stateAccount = await program.account.stateMap.fetch(statePda);
+    assert.isDefined(stateAccount);
+    // Add more assertions as needed
+  });
+
+  it("Call Crank", async () => {
+    console.log("Calling Crank...");
+
+    await program.methods
+      .crank()
+      .accounts({
+        state: statePda,
+        irmaAdmin: irmaAdmin.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+      })
+      .rpc({
+        skipPreflight: true, // Skip preflight for testing
+        commitment: "confirmed", // Use confirmed commitment
+      });
+
+    console.log("Crank called");
+
+    // Fetch and check state changes as needed
+    const stateAccount = await program.account.stateMap.fetch(crankPda);
     assert.isDefined(stateAccount);
     // Add more assertions as needed
   });

@@ -1,6 +1,8 @@
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use anchor_lang::prelude::*;
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::system_program;
@@ -8,6 +10,7 @@ mod tests {
     // use anchor_lang::prelude::Account;
     use anchor_lang::prelude::Program;
     use anchor_lang::context::Context;
+    use solana_program::pubkey;
     // use bytemuck::bytes_of_mut;
     // use anchor_lang::Discriminator;
     use irma::IRMA_ID;
@@ -15,7 +18,7 @@ mod tests {
     use irma::pricing::{StateMap, StableState};
     use irma::pricing::{init_pricing, set_mint_price, mint_irma, redeem_irma, list_reserves};
     use irma::pricing::MAX_BACKING_COUNT;
-    use irma::{Common, Init, CommonBumps, InitBumps};
+    use irma::{Init, Common, Maint};
 
     
     fn allocate_state() -> StateMap {
@@ -184,11 +187,11 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            InitBumps::default(), // Use default bumps if not needed
+            BTreeMap::<String, u8>::default(), // Use default bumps if not needed
         );
         let result: std::result::Result<(), Error> = init_pricing(ctx);
         assert!(result.is_ok());
-        msg!("StateMap account: {:?}", accounts.state);
+        // msg!("StateMap account: {:?}", accounts.state);
         return (accounts.state, accounts.irma_admin, accounts.system_program);
     }
 
@@ -210,12 +213,12 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            InitBumps::default(), // Use default bumps if not needed
+            BTreeMap::<String, u8>::default(), // Use default bumps if not needed
         );
         let result: std::result::Result<(), Error> = init_pricing(ctx);
         assert!(result.is_ok());
         msg!("StateMap account initialized successfully: {:?}", accounts.state);
-    }
+   }
 
     #[test]
     fn test_set_mint_price_anchor() {
@@ -235,7 +238,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result: std::result::Result<(), Error> = set_mint_price(ctx, "USDT", 1.5);
         assert!(result.is_ok());
@@ -244,7 +247,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = set_mint_price(ctx, "USDC", 1.8);
         assert!(result.is_ok());
@@ -252,7 +255,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = set_mint_price(ctx, "FDUSD", 1.3);
         assert!(result.is_ok());
@@ -293,7 +296,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result = mint_irma(ctx, "USDT", 100);
         match result {
@@ -308,7 +311,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = mint_irma(ctx, "PYUSD", 1000);
         match result {
@@ -323,7 +326,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = mint_irma(ctx, "USDG", 10000);
         match result {
@@ -370,7 +373,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(),
+                BTreeMap::<String, u8>::default(),
             );
             msg!("Pre-redeem IRMA state 1:");
             msg!("Backing reserves: {}", list_reserves(ctx));
@@ -395,7 +398,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result: std::result::Result<(), Error> = redeem_irma(ctx, "USDC", 10);
         match result {
@@ -411,7 +414,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDT", 20);
         match result {
@@ -426,7 +429,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "PYUSD", 30);
         match result {
@@ -441,7 +444,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDG", 40);
         match result {
@@ -456,7 +459,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "FDUSD", 50);
         match result {
@@ -471,7 +474,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
 
         msg!("Mid-state for USDT before further redemption: {:?}", 
@@ -490,7 +493,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDS", 10);
         match result {
@@ -527,7 +530,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(),
+                BTreeMap::<String, u8>::default(),
             );
             msg!("Backing reserves: {}", list_reserves(ctx));
             let state: &mut StateMap = &mut accounts.state;
@@ -553,7 +556,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         // msg!("Current prices: {:?}", accounts.state.mint_price);
         // msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
@@ -568,7 +571,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(), // Use default bumps if not needed
+                BTreeMap::<String, u8>::default(), // Use default bumps if not needed
             );
             reslt = redeem_irma(ctx, "FDUSD", 100_000_000_000);
             match reslt {

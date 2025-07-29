@@ -28,55 +28,52 @@ use anchor_lang::{
     // AnchorSerialize, 
     // AnchorDeserialize, 
     declare_id,
+    // declare_program,
     Discriminator,
     // program,
-    pubkey,
+    // Pubkey,
     require_keys_neq,
     Result,
-    // ToAccountMetas,
+    ToAccountMetas,
     solana_program,
     system_program,
     zero_copy
 };
-// use anchor_lang::system_program::ID;
+use anchor_lang::solana_program::clock::Clock;
+use static_assertions::const_assert_eq;
+use std::mem::size_of;
+use solana_program::pubkey;
 
 
-pub mod iopenbook;
+// pub mod iopenbook;
 pub mod pricing;
+pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
 
+// declare_program!(openbook_v2); // does not work, parsing of IDL file fails
+use openbook_v2::state::{EventHeap, Market};
+use openbook_v2::cpi::accounts::ConsumeGivenEvents;
+// use openbook_v2::accounts::ConsumeGivenEvents;
+use openbook_v2::cpi::{consume_events, consume_given_events};
+// use openbook_v2::openbook_v2::{consume_given_events};
+use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
+// use iopenbook::{EventHeap, Market, ConsumeGivenEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
+// use iopenbook::{consume_given_events, MAX_NUM_EVENTS};
 
-use iopenbook::{EventHeap, Market, ConsumeEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-use iopenbook::{/*OpenBookV2,*/ get_latest_slot, consume_given_events, MAX_NUM_EVENTS};
 use pricing::{
     mint_irma,
     redeem_irma,
     set_mint_price,
-    StateMap, 
+    StableState,
+    StateMap,
     MAX_BACKING_COUNT
 };
 
-// #[no_mangle]
-// unsafe extern "Rust" fn __getrandom_v03_custom(
-//     dest: *mut u8,
-//     len: usize,
-// ) -> Result<(), Error> {
-//     Err(Error::UNSUPPORTED)
-// }
-
-// impl Default for AHasher {
-//     // let mut map: HashMap<i32, i32, BuildHasherDefault<AHasher>> = HashMap::default();
-//     // map.insert(13, 53);
-
-//     #[inline]
-//     fn default() -> AHasher {
-//         RandomState::with_fixed_keys().build_hasher()
-//     }
-// }
-
 // CPI context and consume_given_events for OpenBook V2
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
-pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
-declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
+// pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
+// declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
+pub const IRMA_ID: Pubkey = pubkey!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
+declare_id!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
 
 /// CHECK: following declares unsafe crank_market function - it allocates typed event_heap and typed market that are then
 /// serialized into a buffer and then leaked to the static lifetime. Serialized data will be exlusively used to access
@@ -99,6 +96,7 @@ pub mod irma {
     /// The minimum requirement is that the stablecoin has 100M circulating supply and is not a meme coin.
     /// IRMA relies on pre-existing network effects of each of the reserve stablecoins.
     pub fn add_stablecoin(ctx: Context<Maint>, symbol: String, mint_address: Pubkey, decimals: u8) -> Result<()> {
+        msg!("Add stablecoin entry, size of StateMap: {}", size_of::<StateMap>());
         pricing::add_stablecoin(ctx, &symbol, mint_address, decimals)
     }
 
@@ -124,26 +122,33 @@ pub mod irma {
 
     /// Crank the OpenBook V2 from client.
     /// This function is called periodically (at least once per slot) to process events and update the IRMA state.
-    pub fn crank(ctx: Context<Crk>) -> Result<()> {
+    // pub fn crank(ctx: Context<CrankAccounts>) -> Result<()> {
+    pub fn crank(ctx: Context<Maint>) -> Result<()> {
+        msg!("Crank..., state: {:?}", ctx.accounts.state);
         crank_market(ctx)
     }
 }
 
 /// CHECK: following declares unsafe crank_market function - see comments above.
-fn crank_market(ctx: Context<Crk>) -> Result<()> {
-    let state = ctx.accounts.state.load_mut()?;
-    let slots = get_latest_slot()?;
+// fn crank_market(ctx: Context<CrankAccounts>) -> Result<()> {
+fn crank_market(ctx: Context<Maint>) -> Result<()> {
+    msg!("Cranking market...");
+    // Get the crank state account and the current slot
+    // let state = &ctx.accounts.crank_state;
+    // let state = &ctx.accounts.state;
+    let slot = 32; // Clock::get().unwrap().slot;
+    msg!("Current slot: {}", slot);
 
-    msg!("Cranking IRMA with pubkey: {:?}", state.pubkey);
-
+    // let clock = Clock::get()?;
+    // msg!("Current clock: {:?}", clock);
 
     // let lamports: &mut u64 = Box::leak(Box::new(state.lamports));
     // let signer_account_info: &AccountInfo = &ctx.accounts.signer.to_account_info();
     // let system_program: &AccountInfo = &ctx.accounts.system_program.to_account_info();
 
-    let lamports: &mut u64 = Box::leak(Box::new(state.lamports));
-    let dummy_info = AccountInfo::new(
-        &IRMA_ID,
+    let lamports: &mut u64 = Box::leak(Box::new(1_000_000u64)); // state.lamports));
+    let openbook_info = AccountInfo::new(
+        &OPENBOOKV2_ID,
         false,
         false,
         lamports,
@@ -153,33 +158,35 @@ fn crank_market(ctx: Context<Crk>) -> Result<()> {
         0,
     );
 
-    fn alloc_heap() -> EventHeap {
-        let heap = EventHeap {
-            header: EventHeapHeader {
-                free_head: 0u16,
-                used_head: 0u16,
-                count: 0u16,
-                _padd: 0u16,
-                seq_num: 0u64,
-            },
-            nodes: [EventNode {
-                next: 0u16,
-                prev: 0u16,
-                _pad: [0u8; 4],
-                event: AnyEvent {
-                    event_type: 0u8, // Placeholder for event type
-                    padding: [0u8; 143], // Placeholder for event data
-                },
-            }; MAX_NUM_EVENTS as usize],
-            reserved: [0u8; 64],
-        };
-        return heap;
-    }
+    msg!("OpenBook V2 ID: {:?}", OPENBOOKV2_ID);
+
+    // fn alloc_heap() -> EventHeap {
+    //     let heap = EventHeap {
+    //         header: EventHeapHeader {
+    //             free_head: 0u16,
+    //             used_head: 0u16,
+    //             count: 0u16,
+    //             padd: 0u16,
+    //             seq_num: 0u64,
+    //         },
+    //         nodes: [EventNode {
+    //             next: 0u16,
+    //             prev: 0u16,
+    //             pad: [0u8; 4],
+    //             event: AnyEvent {
+    //                 event_type: 0u8, // Placeholder for event type
+    //                 padding: [0u8; 143], // Placeholder for event data
+    //             },
+    //         }; MAX_NUM_EVENTS as usize],
+    //         reserved: [0u8; 64],
+    //     };
+    //     return heap;
+    // }
 
     // CHECK: following serializes typed object into a buffer.
-    let event_heap: EventHeap = alloc_heap();
+    // let event_heap: EventHeap = alloc_heap();
     let mut event_heap_buffer: Vec<u8> = Vec::with_capacity(std::mem::size_of::<EventHeap>());
-    event_heap.try_serialize(&mut event_heap_buffer).unwrap();
+    // event_heap.try_serialize(&mut event_heap_buffer).unwrap();
     let boxed_heap: &'static mut Vec<u8> = Box::leak(Box::new(event_heap_buffer));
 
     let program_id: &'static Pubkey = &IRMA_ID;
@@ -200,122 +207,12 @@ fn crank_market(ctx: Context<Crk>) -> Result<()> {
         0,
     );
 
-    let signer_info: &AccountInfo<'_> = Box::leak(Box::new(ctx.accounts.signer.to_account_info()));
-    let sys_program: &AccountInfo<'_> = Box::leak(Box::new(ctx.accounts.system_program.to_account_info()));
+    let irma_admin_info: AccountInfo<'_> = ctx.accounts.irma_admin.to_account_info();
+    let sys_program: AccountInfo<'_> = ctx.accounts.system_program.to_account_info();
 
-    // fn alloc_mkt(ekey: Pubkey) -> Market {
-    //     let market = Market {
-    //         // PDA bump
-    //         bump: 0u8,
-    //         pad1: [0u8; 7],
-    //         // Number of decimals used for the base token.
-    //         //
-    //         // Used to convert the oracle's price into a native/native price.
-    //         base_decimals: 0u8,
-    //         pad2: [0u8; 7],
-    //         quote_decimals: 0u8,
-    //         pad3: [0u8; 7],
-    //         // padding1: [0u8; 5],
-
-    //         // Pda for signing vault txs
-    //         market_authority: Pubkey::new_unique(),
-
-    //         // No expiry = 0. Market will expire and no trading allowed after time_expiry
-    //         time_expiry: 0i64,
-
-    //         // Admin who can collect fees from the market
-    //         collect_fee_admin: Pubkey::new_unique(),
-    //         // Admin who must sign off on all order creations
-    //         open_orders_admin: Pubkey::new_unique(), // NonZeroPubkeyOption,
-    //         // Admin who must sign off on all event consumptions
-    //         consume_events_admin: Pubkey::new_unique(), // NonZeroPubkeyOption,
-    //         // Admin who can set market expired, prune orders and close the market
-    //         close_market_admin: Pubkey::new_unique(), // NonZeroPubkeyOption,
-
-    //         // Name. Trailing zero bytes are ignored.
-    //         name: [0u8; 16],
-
-    //         // Address of the BookSide account for bids
-    //         bids: Pubkey::new_unique(),
-    //         // Address of the BookSide account for asks
-    //         asks: Pubkey::new_unique(),
-    //         // Address of the EventHeap account
-    //         event_heap: ekey,
-
-    //         // Oracles account address
-    //         oracle_a: Pubkey::new_unique(), // NonZeroPubkeyOption,
-    //         oracle_b: Pubkey::new_unique(), // NonZeroPubkeyOption,
-    //         // Oracle configuration
-    //         oracle_config: OracleConfig {
-    //             conf_filter: 0f64,
-    //             max_staleness_slots: 0i64,
-    //             reserved: [0u8; 72],
-    //         },
-    //         pad4: [0u8; 8],
-
-    //         // Number of quote native in a quote lot. Must be a power of 10.
-    //         //
-    //         // Primarily useful for increasing the tick size on the market: A lot price
-    //         // of 1 becomes a native price of quote_lot_size/base_lot_size becomes a
-    //         // ui price of quote_lot_size*base_decimals/base_lot_size/quote_decimals.
-    //         quote_lot_size: 6i64,
-
-    //         // Number of base native in a base lot. Must be a power of 10.
-    //         //
-    //         // Example: If base decimals for the underlying asset is 6, base lot size
-    //         // is 100 and and base position lots is 10_000 then base position native is
-    //         // 1_000_000 and base position ui is 1.
-    //         base_lot_size: 6i64,
-
-    //         // Total number of orders seen
-    //         seq_num: 0u64,
-
-    //         // Timestamp in seconds that the market was registered at.
-    //         registration_time: 0i64,
-
-    //         // Fees
-    //         //
-    //         // Fee (in 10^-6) when matching maker orders.
-    //         // maker_fee < 0 it means some of the taker_fees goes to the maker
-    //         // maker_fee > 0, it means no taker_fee to the maker, and maker fee goes to the referral
-    //         maker_fee: -10000i64,
-    //         // Fee (in 10^-6) for taker orders, always >= 0.
-    //         taker_fee: 12000i64,
-
-    //         // Total fees accrued in native quote
-    //         fees_accrued: 0u128,
-    //         // Total fees settled in native quote
-    //         fees_to_referrers: 0u128,
-
-    //         // Referrer rebates to be distributed
-    //         referrer_rebates_accrued: 0u64,
-
-    //         // Fees generated and available to withdraw via sweep_fees
-    //         fees_available: 0u64,
-
-    //         // Cumulative maker volume (same as taker volume) in quote native units
-    //         maker_volume: 0u128,
-
-    //         // Cumulative taker volume in quote native units due to place take orders
-    //         taker_volume_wo_oo: 0u128,
-
-    //         base_mint: Pubkey::new_from_array([0u8; 32]), //  IRMA mint
-    //         quote_mint: Pubkey::new_from_array([0u8; 32]), // Stablecoin mint
-
-    //         market_base_vault: Pubkey::new_unique(),
-    //         base_deposit_total: 100u64,
-
-    //         market_quote_vault: Pubkey::new_unique(),
-    //         quote_deposit_total: 100u64,
-
-    //         reserved: [0u8; 128],
-    //     };
-    //     return market;
-    // }
-    
     // // CHECK: following serializes typed object into a buffer.
     // let market: Market = alloc_mkt(events_acct);
-    let mut market_buffer: Vec<u8> = Vec::with_capacity(1024); // std::mem::size_of::<Market>());
+    let market_buffer: Vec<u8> = Vec::with_capacity(1024); // std::mem::size_of::<Market>());
     // market.try_serialize(&mut market_buffer).unwrap();
     let boxed_market: &mut Vec<u8> = Box::leak(Box::new(market_buffer));
 
@@ -336,17 +233,19 @@ fn crank_market(ctx: Context<Crk>) -> Result<()> {
         0,
     );
 
+    msg!("Market account created: {:?}", market_info.key);
+
     let this_ctx = CpiContext::new(
-        dummy_info,
-        ConsumeEvents {
-            consume_events_admin: Signer::try_from(signer_info).unwrap(),
+        openbook_info,
+        ConsumeGivenEvents {
+            consume_events_admin: irma_admin_info,
             event_heap: events_info,
             market: market_info,
-            system_program: Program::try_from(sys_program).unwrap(),
+            // system_program: Program::try_from(sys_program).unwrap(),
         },
     );
 
-    consume_given_events(this_ctx, slots)?;
+    consume_given_events(this_ctx, vec![slot]);
     Ok(())
 }
 
@@ -395,34 +294,43 @@ fn oracle_input<'info>(
 }
 
 
+/// This data account declaration does not work. Getting the error:
+/// Error: Account does not exist or has no data 3ELURJ38nKRf9pdepgvdzXEE9gnPeHHNSpTxH6K3WHqJ (crank_state)
 #[derive(Accounts)]
-pub struct Crk<'info> {
-    #[account(init, space = State::LEN, payer = signer)]
-    pub state: AccountLoader<'info, State>,
-    #[account(mut, signer)]
-    pub signer: Signer<'info>,
+pub struct CrankAccounts<'info> {
+    // #[account(init, space = State::LEN, payer = signer)]
+    #[account(init, space = 16 + size_of::<State>(), payer=irma_admin, seeds=[b"crank_state".as_ref()], bump)]
+    pub crank_state: Account<'info, State>,
+    #[account(mut)]
+    pub irma_admin: Signer<'info>,
+    #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
-#[account(zero_copy)]
+#[account]
+#[derive(PartialEq, Debug)]
 pub struct State {
     pub pubkey: Pubkey,
     pub mint_price: f64,
     pub last_updated: i64,
     pub lamports: u64,
-    padding1: [u8; 7],
     pub stablecoin: u8,
-    padding2: [u8; 7],
+    pub padding1: [u8; 7],
     pub bump: u8,
+    pub padding2: [u8; 7],
 }
 impl State {
-    pub const LEN: usize = 24 + 32 + 8;
+    pub const LEN: usize = 32 + 40; // 16 bytes for data type id or discriminator (hidden), total 88 bytes
 }
 
+const_assert_eq!(
+    size_of::<State>(),
+    State::LEN
+);
 
 #[derive(Accounts)]
 pub struct Init<'info> {
-    #[account(init, space=120*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+    #[account(init, space=32 + 8 + size_of::<StableState>()*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
     pub state: Account<'info, StateMap>,
     #[account(mut)]
     pub irma_admin: Signer<'info>,
@@ -448,4 +356,6 @@ pub struct Maint<'info> {
     pub irma_admin: Signer<'info>,
     #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
+    // pub clock: Sysvar<'info, Clock>,
 }
+

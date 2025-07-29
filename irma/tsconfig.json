@@ -8,5 +8,11 @@
     "downlevelIteration": true,
     "skipLibCheck": true,
     "strict": false
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "target"
+  ]
 }

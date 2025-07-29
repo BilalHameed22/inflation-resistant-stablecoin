@@ -7,25 +7,16 @@ use std::option::Option;
 // use anchor_lang_idl_spec::IdlType::Option as IdlOption;
 // use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
 
-use anchor_lang_idl_spec::{
-    IdlType,
-    IdlTypeDef, 
-    IdlTypeDefTy, 
-    IdlField, 
-    IdlGenericArg, 
-    IdlDefinedFields, 
-    IdlSerialization,
-};
 use anchor_lang::*;
 // use anchor_lang::system_program::ID;
 use anchor_lang::prelude::*;
 use Vec;
 use std::collections::BTreeMap;
+use static_assertions::const_assert_eq;
+use core::mem::size_of;
+use solana_program::pubkey;
 
-use crate::{Init, Common, Maint};
-// use crate::StateMap;
-// use crate::StableState;
-// use crate::IRMA;
+use crate::{Init, Maint, Common};
 
 // The number of stablecoins that are initially supported by the IRMA program.
 pub const BACKING_COUNT: usize = 6 as usize;
@@ -218,6 +209,10 @@ pub struct StableState {
     pub extra: [u8; 7], // padding to make the size of the struct 25 * EnumCount + 8
 }
 
+const_assert_eq!(
+    size_of::<StableState>(), 96
+);
+
 #[account]
 #[derive(PartialEq, Debug)]
 pub struct StateMap {
@@ -241,6 +236,7 @@ pub const IRMA: StableState = StableState {
 impl StableState {
 
     pub fn new(symbol: &str, mint_address: prelude::Pubkey, backing_decimals: u64) -> Result<Self> {
+        // msg!("StableState size: {}", size_of::<StableState>());
         // const len: usize = symbol.to_bytes().len();
         require!(symbol.len() <= 8, CustomError::InvalidBackingSymbol);
         require!(mint_address != prelude::Pubkey::default(), CustomError::InvalidBackingAddress);
@@ -300,9 +296,9 @@ impl StateMap {
             msg!("Symbol {} not found in reserves.", symbol);
             return None;
         }
-        if cfg!(debug_assertions) {
-            msg!("get_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
-        }
+        // if cfg!(debug_assertions) {
+        //     msg!("get_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        // }
         Some(self.reserves.get(i)?.clone())
     }
 
@@ -328,9 +324,9 @@ impl StateMap {
             }
             return None;
         }
-        if cfg!(debug_assertions) {
-            msg!("get_mut_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
-        }
+        // if cfg!(debug_assertions) {
+        //     msg!("get_mut_stablecoin: in {}, out {}", symbol, self.reserves[i].symbol);
+        // }
         Some(self.reserves.get_mut(i)?)
     }
 
