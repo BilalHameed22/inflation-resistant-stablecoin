@@ -49,24 +49,22 @@ use solana_program::pubkey;
 pub mod pricing;
 pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
 
-// declare_program!(openbook_v2); // does not work, parsing of IDL file fails
-use openbook_v2::state::{EventHeap, Market};
+use std::io::{Cursor, Read, Write};
 use openbook_v2::cpi::accounts::ConsumeGivenEvents;
-// use openbook_v2::accounts::ConsumeGivenEvents;
 use openbook_v2::cpi::{consume_events, consume_given_events};
-// use openbook_v2::openbook_v2::{consume_given_events};
+use openbook_v2::state::{EventHeap, Market};
 use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-// use iopenbook::{EventHeap, Market, ConsumeGivenEvents, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-// use iopenbook::{consume_given_events, MAX_NUM_EVENTS};
+
 
 use pricing::{
     mint_irma,
     redeem_irma,
     set_mint_price,
-    StableState,
-    StateMap,
     MAX_BACKING_COUNT
 };
+
+pub use pricing::StateMap;
+pub use pricing::StableState;
 
 // CPI context and consume_given_events for OpenBook V2
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
@@ -129,6 +127,7 @@ pub mod irma {
     }
 }
 
+
 /// CHECK: following declares unsafe crank_market function - see comments above.
 // fn crank_market(ctx: Context<CrankAccounts>) -> Result<()> {
 fn crank_market(ctx: Context<Maint>) -> Result<()> {
@@ -160,34 +159,13 @@ fn crank_market(ctx: Context<Maint>) -> Result<()> {
 
     msg!("OpenBook V2 ID: {:?}", OPENBOOKV2_ID);
 
-    // fn alloc_heap() -> EventHeap {
-    //     let heap = EventHeap {
-    //         header: EventHeapHeader {
-    //             free_head: 0u16,
-    //             used_head: 0u16,
-    //             count: 0u16,
-    //             padd: 0u16,
-    //             seq_num: 0u64,
-    //         },
-    //         nodes: [EventNode {
-    //             next: 0u16,
-    //             prev: 0u16,
-    //             pad: [0u8; 4],
-    //             event: AnyEvent {
-    //                 event_type: 0u8, // Placeholder for event type
-    //                 padding: [0u8; 143], // Placeholder for event data
-    //             },
-    //         }; MAX_NUM_EVENTS as usize],
-    //         reserved: [0u8; 64],
-    //     };
-    //     return heap;
-    // }
-
     // CHECK: following serializes typed object into a buffer.
     // let event_heap: EventHeap = alloc_heap();
-    let mut event_heap_buffer: Vec<u8> = Vec::with_capacity(std::mem::size_of::<EventHeap>());
-    // event_heap.try_serialize(&mut event_heap_buffer).unwrap();
-    let boxed_heap: &'static mut Vec<u8> = Box::leak(Box::new(event_heap_buffer));
+    msg!("Allocating event heap, mem size: {}", std::mem::size_of::<EventHeap>());
+    let buf_size: usize = std::mem::size_of::<EventHeap>();
+    let event_heap_buffer: &mut Vec<u8> = &mut vec![0; buf_size]; // Vec::with_capacity(buf_size);
+    let boxed_heap: &'static mut Vec<u8> = Box::leak(Box::new(event_heap_buffer.clone()));
+    msg!("Event heap buffer allocated, size: {}", boxed_heap.len());
 
     let program_id: &'static Pubkey = &IRMA_ID;
     let events_acct: Pubkey = Pubkey::find_program_address(&[b"eventheap".as_ref()], program_id).0;
@@ -208,13 +186,13 @@ fn crank_market(ctx: Context<Maint>) -> Result<()> {
     );
 
     let irma_admin_info: AccountInfo<'_> = ctx.accounts.irma_admin.to_account_info();
-    let sys_program: AccountInfo<'_> = ctx.accounts.system_program.to_account_info();
+    // let sys_program: AccountInfo<'_> = ctx.accounts.system_program.to_account_info();
 
     // // CHECK: following serializes typed object into a buffer.
     // let market: Market = alloc_mkt(events_acct);
-    let market_buffer: Vec<u8> = Vec::with_capacity(1024); // std::mem::size_of::<Market>());
+    let market_buffer: Vec<u8> = vec![0; std::mem::size_of::<Market>()]; //Vec::with_capacity(1024);
     // market.try_serialize(&mut market_buffer).unwrap();
-    let boxed_market: &mut Vec<u8> = Box::leak(Box::new(market_buffer));
+    let boxed_market: &mut Vec<u8> = Box::leak(Box::new(market_buffer.clone()));
 
     let market_acct: Pubkey = Pubkey::find_program_address(&[b"market".as_ref()], program_id).0;
     let market_key: &'static mut Pubkey = Box::leak(Box::new(market_acct));
@@ -245,7 +223,77 @@ fn crank_market(ctx: Context<Maint>) -> Result<()> {
         },
     );
 
-    consume_given_events(this_ctx, vec![slot]);
+    #[cfg(not(test))]
+    {
+        fn alloc_heap() -> EventHeap {
+            let heap = EventHeap {
+                header: EventHeapHeader {
+                    free_head: 0u16,
+                    used_head: 0u16,
+                    count: 0u16,
+                    padd: 0u16,
+                    seq_num: 0u64,
+                },
+                nodes: [EventNode {
+                    next: 0u16,
+                    prev: 0u16,
+                    pad: [0u8; 4],
+                    event: AnyEvent {
+                        event_type: 0u8, // Placeholder for event type
+                        padding: [0u8; 143], // Placeholder for event data
+                    },
+                }; 600 as usize], // just the first 600 events
+                reserved: [0u8; 64],
+            };
+            return heap;
+        }
+        // fn alloc_mkt(market_key: Pubkey) -> Market {
+        //     let market = Market {
+        //         // pubkey: market_key,
+        //         base_lot_size: 1,
+        //         quote_lot_size: 1,
+        //         base_decimals: 6,
+        //         quote_decimals: 6,
+        //         padding1: [0u8; 5],
+        //     };
+        //     return market;
+        // }
+
+        fn consume_given_events_mock<'info>(ctx: CpiContext<'info, 'info, 'info, 'info, ConsumeGivenEvents<'info>>, _slots: Vec<u64>) {
+            // mock implementation
+            msg!("Mocking consume_given_events with slots: {:?}", _slots);
+            let event_heap: EventHeap = alloc_heap();
+            msg!("Mocked event heap header: {:?}", event_heap.header);
+            // let market_info: AccountInfo<'info> = ctx.accounts.market.to_account_info();
+            // msg!("Market account key: {:?}", market_info.key);
+            // let market: Market = alloc_mkt(market_info.key);
+            // msg!("Mocked market: {:?}", market);
+            let binding = ctx.accounts.event_heap.to_account_info();
+            let mut event_heap_buf = binding.data.borrow_mut();
+            msg!("In mock execution, heap size: {}", event_heap_buf[..].len());
+            // event_heap_buf.clear();
+            let mut cursor = Cursor::new(&mut event_heap_buf[..]); // Create a Cursor from the slice
+            event_heap.try_serialize(&mut cursor).unwrap();
+            // let mut market_buf = ctx.accounts.market.to_account_info().data.borrow_mut();
+            // market_buf.clear();
+            // let mut cursor = Cursor::new(&mut market_buf[..]); // Create a Cursor from the slice
+            // market.try_serialize(&mut cursor).unwrap();
+        }
+        msg!("Calling consume_given_events_mock...");
+        consume_given_events_mock(this_ctx, vec![slot]);
+    }
+    #[cfg(test)]
+    {
+        msg!("Calling consume_given_events...");
+        consume_given_events(this_ctx, vec![slot]);
+    }
+
+    // CHECK: following serializes typed object into a buffer.
+    let event_heap: EventHeap = EventHeap::try_from_slice(&event_heap_buffer)?;
+    msg!("Event heap header: {:?}", event_heap.header);
+    let market: Market = Market::try_from_slice(&market_buffer)?;
+    msg!("Market: {:?}", market);
+    msg!("Crank market completed successfully.");
     Ok(())
 }
 

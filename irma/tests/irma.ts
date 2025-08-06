@@ -9,7 +9,7 @@ describe("irma", () => {
   anchor.setProvider(provider);
 
   console.log("Using provider:", provider.wallet.publicKey.toBase58());
-  const program = anchor.workspace.irma as Program<Irma>;
+  const program = anchor.workspace.irma as Program<Irma>; // see how this is done for anchor 0.27.0
   if (!program) throw new Error("Program 'irma' not found in anchor.workspace");
 
   // Example keypairs
