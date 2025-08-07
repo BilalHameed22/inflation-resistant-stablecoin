@@ -40,18 +40,18 @@ mod tests {
         let quote_token: &str = "USDT";
         let new_price: f64 = 1.23;
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             // assert_eq!(mut_reserve.mint_price, 1.0);
             mut_reserve.mint_price = 1.0;
         }
         {
-            assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price, 1.0);
+            assert_eq!(state.get_stablecoin(quote_token).unwrap().mint_price, 1.0);
         }
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.mint_price = new_price;
         }
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price, new_price);
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().mint_price, new_price);
         Ok(())
     }
 
@@ -60,16 +60,16 @@ mod tests {
         let mut state = init_state();
         let quote_token = "USDT";
         let amount = 100;
-        let price = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price;
-        let prev_circulation = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation;
-        let prev_reserve = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves;
+        let price = state.get_stablecoin(quote_token).unwrap().mint_price;
+        let prev_circulation = state.get_stablecoin(quote_token).unwrap().irma_in_circulation;
+        let prev_reserve = state.get_stablecoin(quote_token).unwrap().backing_reserves;
         // Simulate mint_irma logic
-        let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+        let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
         mut_reserve.backing_reserves += amount;
         mut_reserve.irma_in_circulation += (amount as f64 / price).ceil() as u64;
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves, 
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().backing_reserves, 
             prev_reserve + amount);
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation, 
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().irma_in_circulation, 
             prev_circulation + (amount as f64 / price).ceil() as u64);
         Ok(())
     }
@@ -79,16 +79,16 @@ mod tests {
         let mut state = init_state();
         let quote_token = "USDT";
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.backing_reserves = 1000;
         }
-        let prev_backing = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves;
+        let prev_backing = state.get_stablecoin(quote_token).unwrap().backing_reserves;
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.backing_reserves -= 100;
         }
         // Simulate redeem_irma logic (simple case)
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves, prev_backing - 100);
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().backing_reserves, prev_backing - 100);
         Ok(())
     }
 
@@ -99,13 +99,13 @@ mod tests {
         let irma_amount = 5;
         {
             // Manipulate state to create a price difference
-            let mut_reserve = state.get_mut_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin("USDT").unwrap();
             mut_reserve.mint_price = 2.0;
             mut_reserve.backing_reserves = 1000;
             mut_reserve.irma_in_circulation = 100;
             mut_reserve.irma_in_circulation -= irma_amount;
         }
-        assert_eq!(state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation, 
+        assert_eq!(state.get_stablecoin("USDT").unwrap().irma_in_circulation, 
             prev_circulation - irma_amount);
         Ok(())
     }
@@ -281,17 +281,17 @@ mod tests {
         };
         msg!("Pre-mint IRMA state:");
         msg!("Backing reserves for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDT").unwrap().backing_reserves);
         msg!("Backing reserves for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("PYUSD").unwrap().backing_reserves);
         msg!("Backing reserves for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDG").unwrap().backing_reserves);
         msg!("IRMA in circulation for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDT").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("PYUSD").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDG").unwrap().irma_in_circulation);
         let mut ctx: Context<Common> = Context::new(
             program_id,
             &mut accounts,
@@ -340,17 +340,17 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Post-mint IRMA state:");
         msg!("Backing reserves for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDT").unwrap().backing_reserves);
         msg!("Backing reserves for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("PYUSD").unwrap().backing_reserves);
         msg!("Backing reserves for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDG").unwrap().backing_reserves);
         msg!("IRMA in circulation for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDT").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("PYUSD").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDG").unwrap().irma_in_circulation);
         Ok(())
     }
 
@@ -385,7 +385,7 @@ mod tests {
                 msg!("Skipping non-existent stablecoin: {}", sc.symbol);
                 continue; // skip non-existent stablecoins
             }
-            let mut_backing = accounts.state.get_mut_stablecoin(&sc.symbol).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_backing = accounts.state.get_mut_stablecoin(&sc.symbol).unwrap();
             let reserve: &mut u64 = &mut mut_backing.backing_reserves;
             let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
             *reserve = 1000000; // Set a large reserve for testing
@@ -478,7 +478,7 @@ mod tests {
         );
 
         msg!("Mid-state for USDT before further redemption: {:?}", 
-            state_account.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            state_account.get_stablecoin("USDT").unwrap().backing_reserves);
         // Test for near maximum redemption
         result = redeem_irma(ctx, "USDT", 10_000);
         match result {
@@ -542,7 +542,7 @@ mod tests {
                     msg!("Skipping non-existent stablecoin: {}", sc.symbol);
                     continue; // skip non-existent stablecoins
                 }
-                let mut_backing = state.get_mut_stablecoin(&sc.symbol).ok_or(CustomError::InvalidQuoteToken)?;
+                let mut_backing = state.get_mut_stablecoin(&sc.symbol).unwrap();
                 let reserve: &mut u64 = &mut mut_backing.backing_reserves;
                 let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
                 let price: &mut f64 = &mut mut_backing.mint_price;

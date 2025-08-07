@@ -93,7 +93,7 @@ describe("irma", () => {
     await program.methods
       .crank()
       .accounts({
-        state: crankPda,
+        crankState: crankPda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
