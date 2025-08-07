@@ -73,9 +73,8 @@ pub use pricing::StableState;
 pub const IRMA_ID: Pubkey = pubkey!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
 declare_id!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
 
-/// CHECK: following declares unsafe crank_market function - it allocates typed event_heap and typed market that are then
-/// serialized into a buffer and then leaked to the static lifetime. Serialized data will be exlusively used to access
-/// the OpenBook V2 events and market data. The data is not mutable, so it is safe to leak it to the static lifetime.
+/// IRMA program
+/// Use OpenBook V2 to process events and update the IRMA state, including pricing.
 #[program]
 pub mod irma {
     use super::*;

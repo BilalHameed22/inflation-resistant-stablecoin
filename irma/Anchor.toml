@@ -9,6 +9,12 @@ skip-lint = false
 irma = "4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ"
 # "8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6"
 
+[programs.devnet]
+irma = "4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ"
+
+[programs.mainnet]
+irma = "4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ"
+
 [registry]
 url = "https://api.apr.dev"
 

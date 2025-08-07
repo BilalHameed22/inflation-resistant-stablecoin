@@ -196,8 +196,8 @@ pub fn list_reserves(ctx: Context<Common>) -> String {
 
 /// Alternative implementation that allows for easy addition of new stablecoins
 /// Each stablecoin struct uses 80 bytes.
-#[account]
-#[derive(PartialEq, Debug)]
+// #[account]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Debug)]
 pub struct StableState {
     pub symbol: String, // symbol of the stablecoin, e.g. "USDT"
     pub mint_address: Pubkey, // mint address of the stablecoin
@@ -223,7 +223,7 @@ pub struct StateMap {
 
 /// Immutable data for IRMA itself.
 pub const IRMA: StableState = StableState {
-    symbol: String::new(), // symbol of the stablecoin, e.g. "IRMA"
+    symbol: String::new(), // "IRMA".to_string(), <-- can't use to_string() in a const?
     mint_address: pubkey!("irmacFBRx7148dQ6qq1zpzUPq57Jr8V4vi5eXDxsDe1"), // IRMA mint address on Solana
     backing_decimals: 6,
     mint_price: 1.0,

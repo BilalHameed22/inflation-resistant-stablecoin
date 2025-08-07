@@ -9,7 +9,9 @@ describe("irma", () => {
   anchor.setProvider(provider);
 
   console.log("Using provider:", provider.wallet.publicKey.toBase58());
-  const program = anchor.workspace.irma as Program<Irma>; // see how this is done for anchor 0.27.0
+  const programId = new anchor.web3.PublicKey("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ"); // Replace with your actual program ID
+  const program = new Program(require("../target/idl/irma.json"), programId, provider) as Program<Irma>;
+  // const program = anchor.workspace.irma as Program<Irma>; // see how this is done for anchor 0.27.0
   if (!program) throw new Error("Program 'irma' not found in anchor.workspace");
 
   // Example keypairs
@@ -43,7 +45,7 @@ describe("irma", () => {
         state: statePda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
-        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        // clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
       })
       .rpc();
 
@@ -68,7 +70,6 @@ describe("irma", () => {
         state: statePda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
-        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
       })
       .rpc();
     
@@ -82,19 +83,21 @@ describe("irma", () => {
 
   it("Call Crank", async () => {
     console.log("Calling Crank...");
+    // Find PDA for state
+    [crankPda, stateBump] = anchor.web3.PublicKey.findProgramAddressSync(
+      [crankSeed],
+      program.programId
+    );
+    console.log("Crank PDA:", crankPda.toJSON());
 
     await program.methods
       .crank()
       .accounts({
-        state: statePda,
+        state: crankPda,
         irmaAdmin: irmaAdmin.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
-        clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
       })
-      .rpc({
-        skipPreflight: true, // Skip preflight for testing
-        commitment: "confirmed", // Use confirmed commitment
-      });
+      .rpc();
 
     console.log("Crank called");
 
