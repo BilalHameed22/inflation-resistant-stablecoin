@@ -23,60 +23,100 @@ mod tests {
     use irma::pricing::{StateMap, StableState};
     use irma::IRMA_ID;
     use irma::pricing::MAX_BACKING_COUNT;
-    use irma::{Init, Common, Maint};
+    use irma::Maint;
     use irma::pricing::{init_pricing, set_mint_price, mint_irma, redeem_irma, list_reserves};
-    use irma::State;
+    // use irma::State;
 
 
 
     #[test]
-    fn test_crank() -> Result<()> {
+    fn test_crank<'info>() -> Result<()> {
+        let program_id: &Pubkey = &IRMA_ID;
+        msg!("Starting crank test...");
 
+        fn prep_accounts<'info>(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
+            // Create a buffer for StateMap and wrap it in AccountInfo
+            let lamports: &mut u64 = Box::leak(Box::new(100000u64));
+            let mut state: StateMap = allocate_state();
+            let _ = state.init_reserves(); // Add initial stablecoins to the state
 
-        fn verify_event_heap_state<'c: 'info, 'info>(ctx: CpiContext<'_, '_ , 'c, 'info, ConsumeEvents<'info>>, operation: &str) -> Result<()> {
-            let event_heap_account = &ctx.accounts.event_heap;
-            let event_heap_data = event_heap_account.data.borrow();
-            
-            msg!("=== EventHeap verification after {} ===", operation);
-            msg!("Account key: {:?}", event_heap_account.key);
-            msg!("Account owner: {:?}", event_heap_account.owner);
-            msg!("Data length: {}", event_heap_data.len());
-            msg!("Expected size: {}", std::mem::size_of::<EventHeap>());
-            
-            if event_heap_data.len() >= std::mem::size_of::<EventHeapHeader>() {
-                match EventHeap::try_from_slice(&event_heap_data) {
-                    Ok(heap) => {
-                        msg!("✅ EventHeap deserialization successful");
-                        msg!("Header: free_head={}, used_head={}, count={}, seq_num={}", 
-                            heap.header.free_head, heap.header.used_head, 
-                            heap.header.count, heap.header.seq_num);
-                        
-                        // Check first few nodes
-                        if heap.header.count > 0 && heap.nodes.len() > 0 {
-                            msg!("First node: event_type={}, next={}, prev={}", 
-                                heap.nodes[0].event.event_type,
-                                heap.nodes[0].next,
-                                heap.nodes[0].prev);
-                        }
-                    },
-                    Err(e) => {
-                        msg!("❌ EventHeap deserialization failed: {:?}", e);
-                        // Log first few bytes for debugging
-                        let preview_len = std::cmp::min(32, event_heap_data.len());
-                        let preview: Vec<u8> = event_heap_data[..preview_len].to_vec();
-                        msg!("First {} bytes: {:?}", preview_len, preview);
-                    }
-                }
-            } else {
-                msg!("❌ Data too small for EventHeap");
-            }
-            
-            Ok(())
+            // Prepare the account data with the correct discriminator
+            let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
+            state.try_serialize(&mut state_data_vec).unwrap();
+
+            let state_data: &'info mut Vec<u8> = Box::leak(Box::new(state_data_vec));
+            let state_key: &'info mut Pubkey = Box::leak(Box::new(state_account));
+            // msg!("StateMap pre-test account data: {:?}", state_data);
+            let state_account_info: AccountInfo<'info> = AccountInfo::new(
+                state_key,
+                false, // is_signer
+                true,  // is_writable
+                lamports,
+                state_data,
+                owner,
+                false,
+                0,
+            );
+            // msg!("StateMap account created: {:?}", state_account_info.key);
+            // msg!("StateMap owner: {:?}", owner);
+            // Use a mock Signer for testing purposes
+            let signer_pubkey: &'info mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
+            let lamportsx: &'info mut u64 = Box::leak(Box::new(0u64));
+            let data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+            let owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+            let signer_account_info: AccountInfo<'info> = AccountInfo::new(
+                signer_pubkey,
+                true, // is_signer
+                false, // is_writable
+                lamportsx,
+                data,
+                owner,
+                false,
+                0,
+            );
+            // Create AccountInfo for system_program
+            let sys_lamports: &'info mut u64 = Box::leak(Box::new(0u64));
+            let sys_data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+            let sys_owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+            let sys_account_info: AccountInfo<'info> = AccountInfo::new(
+                &system_program::ID,
+                false, // is_signer
+                false, // is_writable
+                sys_lamports,
+                sys_data,
+                sys_owner,
+                true,
+                0,
+            );
+            (state_account_info, signer_account_info, sys_account_info)
         }
 
-        let crank_result: std::result::Result<(), Error> = money::crank(this_ctx);
+        fn allocate_state() -> StateMap {
+            let mut state: StateMap = StateMap::new();
+            state.init_reserves().unwrap(); // Initialize reserves
+            state
+        }
+        msg!("Starting crank test...");
+        let state_account: Pubkey = Pubkey::find_program_address(&[b"state".as_ref()], program_id).0;
+        let (state_account_info, irma_admin_account_info, sys_account_info) 
+                 = prep_accounts(program_id, state_account);
+        // Bind to variables to extend their lifetime
+        let state_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(state_account_info));
+        let irma_admin_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(irma_admin_account_info));
+        let sys_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(sys_account_info));
+        let mut accounts: Maint<'_> = Maint {
+            state: Account::try_from(state_account_static).unwrap(),
+            irma_admin: Signer::try_from(irma_admin_account_static).unwrap(),
+            system_program: Program::try_from(sys_account_static).unwrap(),
+        };
+        let ctx: Context<Maint> = Context::new(
+            program_id,
+            &mut accounts,
+            &[],
+            BTreeMap::<String, u8>::default(), // Use default bumps if not needed
+        );
+        let crank_result: std::result::Result<(), Error> = money::crank(ctx);
         assert!(crank_result.is_ok());
-        verify_event_heap_state(this_ctx, "consume_given_events")?;
         msg!("Crank executed successfully");
 
         msg!("Crank market completed successfully.");

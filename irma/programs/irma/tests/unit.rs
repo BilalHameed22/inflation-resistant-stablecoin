@@ -110,7 +110,7 @@ mod tests {
         Ok(())
     }
 
-    fn prep_accounts(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
+    fn prep_accounts<'info>(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
         // Create a buffer for StateMap and wrap it in AccountInfo
         let lamports: &mut u64 = Box::leak(Box::new(100000u64));
         let mut state: StateMap = allocate_state();
@@ -167,7 +167,7 @@ mod tests {
         (state_account_info, signer_account_info, sys_account_info)
     }
 
-    fn initialize_anchor(program_id: &'info Pubkey) -> (Account<'info, StateMap>, Signer<'info>, Program<'info, anchor_lang::system_program::System>) {
+    fn initialize_anchor<'info>(program_id: &'info Pubkey) -> (Account<'info, StateMap>, Signer<'info>, Program<'info, anchor_lang::system_program::System>) {
         //                 state_account_info: &'info AccountInfo<'info>) {
         //                 sys_account_info: &AccountInfo<'info>) {
         // let program_id: &'info Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn test_initialize_anchor() {
+    fn test_initialize_anchor<'info>() {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing init_pricing IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
@@ -221,7 +221,7 @@ mod tests {
    }
 
     #[test]
-    fn test_set_mint_price_anchor() {
+    fn test_set_mint_price_anchor<'info>() {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing set IRMA mint price with normal conditions");  
         msg!("-------------------------------------------------------------------------");
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mint_irma_anchor() -> Result<()> {
+    fn test_mint_irma_anchor<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing mint IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
@@ -356,7 +356,7 @@ mod tests {
 
 
     #[test]
-    fn test_redeem_irma_anchor() -> Result<()> {
+    fn test_redeem_irma_anchor<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA when mint price is less than redemption price");  
         msg!("-------------------------------------------------------------------------");
@@ -512,7 +512,7 @@ mod tests {
 
     /// Test cases for when redemption price is less than mint price
     #[test]
-    fn test_redeem_irma_normal() -> Result<()> {
+    fn test_redeem_irma_normal<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA with normal conditions, but with large discrepancies in mint prices");  
         msg!("-------------------------------------------------------------------------");

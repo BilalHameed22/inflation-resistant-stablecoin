@@ -35,7 +35,8 @@ pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81
 use openbook_v2::state::EventHeap; // {EventHeap, Market};
 // use openbook_v2::cpi::{consume_events, consume_given_events};
 use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
+// use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
+use openbook_v2::cpi::accounts::{ConsumeGivenEvents, PlaceOrder};
 
 
 /// CHECK: following declares unsafe crank_market function - see comments above.
@@ -56,7 +57,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
         AccountInfo<'static>,
         AccountInfo<'static>, 
         AccountInfo<'static>, 
-        Signer<'static>
+        AccountInfo<'static>
     ) {
         // let signer_account_info: &AccountInfo = &ctx.accounts.signer.to_account_info();
         // let system_program: &AccountInfo = &ctx.accounts.system_program.to_account_info();
@@ -105,9 +106,19 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
         );
         msg!("EventHeap account created: {:?}", events_info.key);
 
-        let signer_account_info: Signer<'_> = Signer::try_from(&ctx.accounts.irma_admin)
-            .expect("Failed to get signer account info");
+        // let signer_account_info: Signer<'_> = Signer::try_from(&ctx.accounts.irma_admin)
+        //     .expect("Failed to get signer account info");
         // let sys_program: AccountInfo<'_> = ctx.accounts.system_program.to_account_info();
+        let signer_account_info: AccountInfo<'static> = ctx.accounts.irma_admin.to_account_info();
+        //     &ctx.accounts.irma_admin.key(),
+        //     true, // is_signer
+        //     false, // is_writable
+        //     lamports,
+        //     &mut [],
+        //     owner, // ctx.accounts.irma_admin.owner,
+        //     false,
+        //     0,
+        // );
 
         // // CHECK: following serializes typed object into a buffer.
         // let market: Market = alloc_mkt(events_acct);
@@ -137,9 +148,9 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
     let state_account: Pubkey = Pubkey::find_program_address(&[b"crank_state".as_ref()], program_id).0;
     let (openbook_info, events_info, market_info, signer_account_info) = prep_accounts(ctx, program_id, state_account);
 
-    let this_ctx = CpiContext::<'_, '_, 'static, 'static, ConsumeEvents<'static>>::new(
+    let this_ctx = CpiContext::<'_, '_, 'static, 'static, ConsumeGivenEvents<'static>>::new(
         openbook_info,
-        ConsumeEvents {
+        ConsumeGivenEvents {
             consume_events_admin: signer_account_info,
             event_heap: events_info,
             market: market_info,
@@ -175,7 +186,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
             return heap;
         }
 
-        fn consume_given_events_mock(ctx: CpiContext<'_, '_, 'static, 'static, ConsumeEvents<'static>>, _slots: Vec<u64>) {
+        fn consume_given_events_mock(ctx: CpiContext<'_, '_, 'static, 'static, ConsumeGivenEvents<'static>>, _slots: Vec<u64>) {
             // mock implementation
             msg!("Mocking consume_given_events with slots: {:?}", _slots);
             let event_heap: EventHeap = alloc_heap();
