@@ -113,7 +113,7 @@ pub mod irma {
     // Crank the OpenBook V2 from client.
     // This function is called periodically (at least once per slot) to process events and update the IRMA state.
     // pub fn crank<'c: 'info, 'info>(ctx: Context<'_, '_, 'c, 'info, ConsumeEvents>) -> Result<()> {
-    pub fn crank(dummy: Context<Maint>) -> Result<()> {
+    pub fn crank(_dummy: Context<Maint>) -> Result<()> {
         msg!("Crank..., ");
         let slot;
         #[cfg(not(test))]
@@ -129,7 +129,7 @@ pub mod irma {
 
         // Create a buffer for StateMap and wrap it in AccountInfo
         let state_account = Pubkey::find_program_address(&[b"state".as_ref()], &IRMA_ID).0;
-        let lamports: &mut u64 = Box::leak(Box::new(100000u64));
+        let lamports: &mut u64 = &mut Box::new(100000u64);
         let mut state: StateMap = StateMap::new();
         let _ = state.init_reserves(); // Add initial stablecoins to the state
 
@@ -137,11 +137,11 @@ pub mod irma {
         let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
         state.try_serialize(&mut state_data_vec).unwrap();
 
-        let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
-        let state_key: &'static mut Pubkey = Box::leak(Box::new(state_account));
-        let owner: &'static Pubkey = Box::leak(Box::new(IRMA_ID));
+        let state_data: &mut Vec<u8> = &mut Box::new(state_data_vec);
+        let state_key: &mut Pubkey = &mut Box::new(state_account);
+        let owner: &Pubkey = &mut Box::new(IRMA_ID);
         // msg!("StateMap pre-test account data: {:?}", state_data);
-        let state_account_info: AccountInfo<'static> = AccountInfo::new(
+        let state_account_info: AccountInfo<'_> = AccountInfo::new(
             state_key,
             false, // is_signer
             true,  // is_writable
@@ -154,12 +154,12 @@ pub mod irma {
         // msg!("StateMap account created: {:?}", state_account_info.key);
         // msg!("StateMap owner: {:?}", owner);
         // Use a mock Signer for testing purposes
-        // let signer_pubkey: &'static mut Pubkey = Box::leak(Box::new(Pubkey::new_unique())); // causes ELF error!
-        let lamportsx: &'static mut u64 = Box::leak(Box::new(0u64));
-        let data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let mut system_id = system_program::ID;
-        let owner: &'static mut Pubkey =  Box::leak(Box::new(system_id));
-        let signer_account_info: AccountInfo<'static> = AccountInfo::new(
+        // let signer_pubkey: &'info mut Pubkey = &mut Box::new(Pubkey::new_unique())); // causes ELF error!
+        let lamportsx: &mut u64 = &mut Box::new(0u64);
+        let data: &mut Vec<u8> = &mut Box::new(vec![]);
+        let system_id = system_program::ID;
+        let owner: &mut Pubkey =  &mut Box::new(system_id);
+        let signer_account_info: AccountInfo<'_> = AccountInfo::new(
             owner, // signer_pubkey,
             true, // is_signer
             false, // is_writable
@@ -170,10 +170,10 @@ pub mod irma {
             0,
         );
         // Create AccountInfo for system_program
-        let sys_lamports: &'static mut u64 = Box::leak(Box::new(0u64));
-        let sys_data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let sys_owner: &'static mut Pubkey = Box::leak(Box::new(Pubkey::default()));
-        let sys_account_info: AccountInfo<'static> = AccountInfo::new(
+        let sys_lamports: &mut u64 = &mut Box::new(0u64);
+        let sys_data: &mut Vec<u8> = &mut Box::new(vec![]);
+        let sys_owner: &mut Pubkey = &mut Box::new(Pubkey::default());
+        let sys_account_info: AccountInfo<'_> = AccountInfo::new(
             &system_program::ID,
             false, // is_signer
             false, // is_writable
@@ -189,7 +189,7 @@ pub mod irma {
         bumps.insert("irma_admin".to_string(), 13u8);
         bumps.insert("system_program".to_string(), 13u8);
 
-        let ctx = Context::<'_, '_, 'static, 'static, Maint<'static>> {
+        let ctx = Context::<'_, '_, '_, '_, Maint<'_>> {
             // Fill in the context with necessary accounts and data
             // This is a placeholder, actual implementation will depend on the accounts structure
             accounts: &mut Maint {

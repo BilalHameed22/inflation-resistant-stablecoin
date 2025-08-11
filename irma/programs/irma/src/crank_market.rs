@@ -37,27 +37,31 @@ use openbook_v2::state::EventHeap; // {EventHeap, Market};
 use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
 // use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
 use openbook_v2::cpi::accounts::{ConsumeGivenEvents, PlaceOrder};
+use std::borrow::Borrow;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::borrow::Cow;
 
 
 /// CHECK: following declares unsafe crank_market function - see comments above.
 /// CPI context and consume_given_events for OpenBook V2
 // pub fn crank_market<'c: 'info, 'info>( ctx: Context<'_, '_, 'c, 'info, ConsumeEvents>, slot: u64 ) -> Result<()> {
-pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, slot: u64 ) -> Result<()> {
+pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, slot: u64 ) -> Result<()> {
     // Get the crank state account and the current slot
     // let state = &ctx.accounts.crank_state;
     // let state = &ctx.accounts.state;
 
     msg!("Crank market called with slot: {}", slot);
 
-    fn prep_accounts(
-        ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, 
-        owner: &'static Pubkey, 
+    fn prep_accounts<'info>(
+        ctx: Context::<'_, '_, 'info, 'info, Maint<'info>>, 
+        owner: &'info Pubkey, 
         state_account: Pubkey
     ) -> (
-        AccountInfo<'static>,
-        AccountInfo<'static>, 
-        AccountInfo<'static>, 
-        AccountInfo<'static>
+        AccountInfo<'info>,
+        AccountInfo<'info>, 
+        AccountInfo<'info>, 
+        AccountInfo<'info>
     ) {
         // let signer_account_info: &AccountInfo = &ctx.accounts.signer.to_account_info();
         // let system_program: &AccountInfo = &ctx.accounts.system_program.to_account_info();
@@ -67,7 +71,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
         let lamports_event: &mut u64 = Box::leak(Box::new(1_000_002u64));
         let lamports: &mut u64 = Box::leak(Box::new(1_000_003u64));
 
-        let openbook_info = AccountInfo::<'static>::new(
+        let openbook_info = AccountInfo::<'info>::new(
             &OPENBOOKV2_ID,
             false,
             false,
@@ -83,10 +87,10 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
 
         // CHECK: following serializes typed object into a buffer.
         // let event_heap: EventHeap = alloc_heap();
-        const buf_size: usize = std::mem::size_of::<EventHeap>();
-        msg!("Allocating event heap, mem size: {}", buf_size);
-        let event_heap_buffer = [0u8; buf_size]; // Vec::with_capacity(buf_size);
-        let event_heap_ref: &'static mut [u8] = Box::leak(Box::new(event_heap_buffer)); // = &mut event_heap_buffer;
+        const BUF_SIZE: usize = std::mem::size_of::<EventHeap>();
+        msg!("Allocating event heap, mem size: {}", BUF_SIZE);
+        let event_heap_buffer = [0u8; BUF_SIZE]; // Vec::with_capacity(BUF_SIZE);
+        let event_heap_ref: &'info mut [u8] = Box::leak(Box::new(event_heap_buffer)); // = &mut event_heap_buffer;
 
         let program_id = &IRMA_ID;
         let events_acct = Box::leak(Box::new(Pubkey::find_program_address(&[b"eventheap".as_ref()], program_id).0));
@@ -94,7 +98,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
 
         msg!("Events account key: {:?}", events_acct);
 
-        let events_info = AccountInfo::<'static>::new(
+        let events_info = AccountInfo::<'info>::new(
             events_acct,
             false,
             false,
@@ -109,7 +113,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
         // let signer_account_info: Signer<'_> = Signer::try_from(&ctx.accounts.irma_admin)
         //     .expect("Failed to get signer account info");
         // let sys_program: AccountInfo<'_> = ctx.accounts.system_program.to_account_info();
-        let signer_account_info: AccountInfo<'static> = ctx.accounts.irma_admin.to_account_info();
+        let signer_account_info: AccountInfo<'info> = ctx.accounts.irma_admin.to_account_info();
         //     &ctx.accounts.irma_admin.key(),
         //     true, // is_signer
         //     false, // is_writable
@@ -123,12 +127,12 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
         // // CHECK: following serializes typed object into a buffer.
         // let market: Market = alloc_mkt(events_acct);
         let market_buffer = vec![0u8; 1024]; // std::mem::size_of::<Market>()];
-        let market_buf_ref: &'static mut Vec<u8> = Box::leak(Box::new(market_buffer)); // &mut market_buffer;
+        let market_buf_ref: &'info mut Vec<u8> = Box::leak(Box::new(market_buffer)); // &mut market_buffer;
 
         let market_acct: &Pubkey = Box::leak(Box::new(Pubkey::find_program_address(&[b"market".as_ref()], program_id).0));
         // let state = &mut ctx.accounts.crank_state;
 
-        let market_info = AccountInfo::<'static>::new(
+        let market_info = AccountInfo::<'info>::new(
             market_acct,
             false,
             false,
@@ -148,7 +152,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
     let state_account: Pubkey = Pubkey::find_program_address(&[b"crank_state".as_ref()], program_id).0;
     let (openbook_info, events_info, market_info, signer_account_info) = prep_accounts(ctx, program_id, state_account);
 
-    let this_ctx = CpiContext::<'_, '_, 'static, 'static, ConsumeGivenEvents<'static>>::new(
+    let mut this_ctx = CpiContext::<'_, '_, 'info, 'info, ConsumeGivenEvents<'info>>::new(
         openbook_info,
         ConsumeGivenEvents {
             consume_events_admin: signer_account_info,
@@ -186,7 +190,7 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
             return heap;
         }
 
-        fn consume_given_events_mock(ctx: CpiContext<'_, '_, 'static, 'static, ConsumeGivenEvents<'static>>, _slots: Vec<u64>) {
+        fn consume_given_events_mock<'info>(ctx: &CpiContext<'_, '_, 'info, 'info, ConsumeGivenEvents<'info>>, _slots: Vec<u64>) {
             // mock implementation
             msg!("Mocking consume_given_events with slots: {:?}", _slots);
             let event_heap: EventHeap = alloc_heap();
@@ -197,15 +201,16 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
             // msg!("Mocked market: {:?}", market);
             let binding = ctx.accounts.event_heap.to_account_info();
             let mut event_heap_buf = binding.data.borrow_mut();
-            let buf_size: usize = std::mem::size_of::<EventHeap>();
-            if event_heap_buf.len() < buf_size {
+            let BUF_SIZE: usize = std::mem::size_of::<EventHeap>();
+            if event_heap_buf.len() < BUF_SIZE {
                 msg!("Event heap buffer too small, mock returning...");
                 return;
             }
             msg!("In mock execution, heap size: {}", event_heap_buf[..].len());
-            // event_heap_buf.clear();
+            // serialized is our initialized data, while event_heap_buf is from outside, attached to ctx.
             let serialized = event_heap.try_to_vec().unwrap();
             if serialized.len() <= event_heap_buf.len() {
+                msg!("Serialized event heap size: {}", serialized.len());
                 event_heap_buf[..serialized.len()].copy_from_slice(&serialized);
             } else {
                 msg!("Serialized data too large: {} > {}", serialized.len(), event_heap_buf.len());
@@ -214,15 +219,23 @@ pub fn crank_market( ctx: Context::<'_, '_, 'static, 'static, Maint<'static>>, s
             // market_buf.clear();
             // let mut cursor = Cursor::new(&mut market_buf[..]); // Create a Cursor from the slice
             // market.try_serialize(&mut cursor).unwrap();
+            let header_size = std::mem::size_of::<EventHeapHeader>();
+            msg!("Mocked consume_given_events completed, event heap updated: {:?}", &event_heap_buf[..header_size]);
         }
         msg!("Calling consume_given_events_mock...");
-        consume_given_events_mock(this_ctx, vec![slot]);
+        let ctx = this_ctx.borrow();
+        consume_given_events_mock(ctx, vec![slot]);
     }
     #[cfg(test)]
     {
         msg!("Calling consume_given_events...");
-        openbook_v2::cpi::consume_given_events(this_ctx, vec![slot]);
+        let ctx = this_ctx.borrow();
+        openbook_v2::cpi::consume_given_events(ctx, vec![slot]);
     }
+    let binding = this_ctx.accounts.event_heap.to_account_info();
+    let event_heap_buf = &binding.data;
+    msg!("Mocked consume_given_events completed, event heap updated: {:?}", event_heap_buf); // Show first 16 bytes of the event heap buffer
+      //  <Rc<RefCell<&mut [u8]>> as Borrow<RefCell<&mut [u8]>>>::borrow(event_heap_buf)[..16]);
 
     Ok(())
 }

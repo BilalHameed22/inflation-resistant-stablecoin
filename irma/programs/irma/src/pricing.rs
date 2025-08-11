@@ -23,7 +23,7 @@ pub const BACKING_COUNT: usize = 6 as usize;
 // This is limited by the maximum size of the account data (10,240 bytes).
 // Each stablecoin entry in the reserves requires approximately 120 bytes of storage.
 // Therefore, the maximum number of stablecoins is calculated as 10,240 / 120 = 85 (rounded down).
-pub const MAX_BACKING_COUNT: usize = 85;
+pub const MAX_BACKING_COUNT: usize = 10; // 85;
 
 // declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
 
