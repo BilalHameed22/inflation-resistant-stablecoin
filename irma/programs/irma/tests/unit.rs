@@ -29,7 +29,7 @@ mod tests {
         let mut state: StateMap = allocate_state();
         let usdt: StableState = 
             StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6 as u64).unwrap();
-        state.add_stablecoin(usdt);
+        state.add_reserve(usdt);
         assert_eq!(state.len(), 1);
         state
     }
@@ -110,7 +110,7 @@ mod tests {
         Ok(())
     }
 
-    fn prep_accounts(owner: &'static Pubkey, state_account: Pubkey) -> (AccountInfo<'static>, AccountInfo<'static>, AccountInfo<'static>) {
+    fn prep_accounts(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
         // Create a buffer for StateMap and wrap it in AccountInfo
         let lamports: &mut u64 = Box::leak(Box::new(100000u64));
         let mut state: StateMap = allocate_state();
@@ -120,10 +120,10 @@ mod tests {
         let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
         state.try_serialize(&mut state_data_vec).unwrap();
 
-        let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
-        let state_key: &'static mut Pubkey = Box::leak(Box::new(state_account));
+        let state_data: &'info mut Vec<u8> = Box::leak(Box::new(state_data_vec));
+        let state_key: &'info mut Pubkey = Box::leak(Box::new(state_account));
         // msg!("StateMap pre-test account data: {:?}", state_data);
-        let state_account_info: AccountInfo<'static> = AccountInfo::new(
+        let state_account_info: AccountInfo<'info> = AccountInfo::new(
             state_key,
             false, // is_signer
             true,  // is_writable
@@ -136,11 +136,11 @@ mod tests {
         // msg!("StateMap account created: {:?}", state_account_info.key);
         // msg!("StateMap owner: {:?}", owner);
         // Use a mock Signer for testing purposes
-        let signer_pubkey: &'static mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
-        let lamportsx: &'static mut u64 = Box::leak(Box::new(0u64));
-        let data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let owner: &'static mut Pubkey = Box::leak(Box::new(Pubkey::default()));
-        let signer_account_info: AccountInfo<'static> = AccountInfo::new(
+        let signer_pubkey: &'info mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
+        let lamportsx: &'info mut u64 = Box::leak(Box::new(0u64));
+        let data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+        let owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+        let signer_account_info: AccountInfo<'info> = AccountInfo::new(
             signer_pubkey,
             true, // is_signer
             false, // is_writable
@@ -151,10 +151,10 @@ mod tests {
             0,
         );
         // Create AccountInfo for system_program
-        let sys_lamports: &'static mut u64 = Box::leak(Box::new(0u64));
-        let sys_data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let sys_owner: &'static mut Pubkey = Box::leak(Box::new(Pubkey::default()));
-        let sys_account_info: AccountInfo<'static> = AccountInfo::new(
+        let sys_lamports: &'info mut u64 = Box::leak(Box::new(0u64));
+        let sys_data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+        let sys_owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+        let sys_account_info: AccountInfo<'info> = AccountInfo::new(
             &system_program::ID,
             false, // is_signer
             false, // is_writable
@@ -167,17 +167,17 @@ mod tests {
         (state_account_info, signer_account_info, sys_account_info)
     }
 
-    fn initialize_anchor(program_id: &'static Pubkey) -> (Account<'static, StateMap>, Signer<'static>, Program<'static, anchor_lang::system_program::System>) {
-        //                 state_account_info: &'static AccountInfo<'static>) {
-        //                 sys_account_info: &AccountInfo<'static>) {
-        // let program_id: &'static Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
+    fn initialize_anchor(program_id: &'info Pubkey) -> (Account<'info, StateMap>, Signer<'info>, Program<'info, anchor_lang::system_program::System>) {
+        //                 state_account_info: &'info AccountInfo<'info>) {
+        //                 sys_account_info: &AccountInfo<'info>) {
+        // let program_id: &'info Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
         let state_account: Pubkey = Pubkey::find_program_address(&[b"state".as_ref()], program_id).0;
         let (state_account_info, irma_admin_account_info, sys_account_info) 
                  = prep_accounts(program_id, state_account);
         // Bind to variables to extend their lifetime
-        let state_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(state_account_info));
-        let irma_admin_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(irma_admin_account_info));
-        let sys_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(sys_account_info));
+        let state_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(state_account_info));
+        let irma_admin_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(irma_admin_account_info));
+        let sys_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(sys_account_info));
         let mut accounts: Init<'_> = Init {
             state: Account::try_from(state_account_static).unwrap(),
             irma_admin: Signer::try_from(irma_admin_account_static).unwrap(),
@@ -200,7 +200,7 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing init_pricing IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
         // Bind to variables to extend their lifetime
@@ -225,7 +225,7 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing set IRMA mint price with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
         // Bind to variables to extend their lifetime
@@ -269,7 +269,7 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing mint IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         // let state_account: Pubkey = Pubkey::find_program_address(&[b"state".as_ref()], program_id).0;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
@@ -360,7 +360,7 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA when mint price is less than redemption price");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
             = initialize_anchor(program_id);
         let mut accounts: Common<'_> = Common {
@@ -516,7 +516,7 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA with normal conditions, but with large discrepancies in mint prices");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
             = initialize_anchor(program_id);
         let mut accounts: Common<'_> = Common {
