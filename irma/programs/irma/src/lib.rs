@@ -54,6 +54,7 @@ use crate::pricing::*;
 pub use crate::pricing::{StateMap, StableState, Init, Common, Maint};
 
 pub mod crank_market;
+pub mod iopenbook;
 
 use crate::crank_market::{
     crank_market,
