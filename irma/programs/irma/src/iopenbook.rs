@@ -3,7 +3,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::prelude::borsh;
 use anchor_lang::prelude::AccountInfo;
-use anchor_lang::prelude::AccountLoader;
+// use anchor_lang::prelude::AccountLoader;
 use anchor_lang::prelude::CpiContext;
 use anchor_lang::prelude::Program;
 // use anchor_lang::prelude::ProgramError;
@@ -18,14 +18,17 @@ use anchor_lang::Key;
 // use anchor_lang::ToAccountInfo;
 use anchor_lang_idl_spec::IdlTypeDef;
 
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+// use num_enum::{IntoPrimitive, TryFromPrimitive};
 use static_assertions::const_assert_eq;
 use std::collections::BTreeMap;
+use std::marker::Copy;
 use std::mem::size_of;
 use std::mem::align_of;
+use crate::borsh::{BorshSerialize, BorshDeserialize};
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
+pub const NODE_SIZE: usize = 88; // 128; // 16 + 112
 
 
 /// OpenBook V2 interfaces for IRMA program
@@ -65,7 +68,7 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
         space = 16 + MAX_NUM_EVENTS as usize * (EVENT_SIZE + 8) + 64,
         payer = consume_events_admin,
     )]
-    pub event_heap: AccountLoader<'info, EventHeap>,
+    pub event_heap: Account<'info, EventHeap>, // AccountLoader<'info, EventHeap>,
     #[account(mut)]
     pub consume_events_admin: Signer<'info>,
     #[account(
@@ -74,7 +77,7 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
         space = 840,
         payer = consume_events_admin,
     )]
-    pub market: AccountLoader<'info, Market>,
+    pub market: Account<'info, Market>, // AccountLoader<'info, Market>,
     pub system_program: Program<'info, System>,
 }
 
@@ -89,7 +92,44 @@ pub fn consume_given_events<'info>(
     Ok(())
 }
 
-#[account(zero_copy)]
+// #[account] // (zero_copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Copy, Clone, Default)]
+pub struct EventNode {
+    pub next: u16,
+    pub prev: u16,
+    pub _pad: [u8; 4],
+    pub event: AnyEvent,
+}
+const_assert_eq!(std::mem::size_of::<EventNode>(), 8 + EVENT_SIZE);
+const_assert_eq!(std::mem::size_of::<EventNode>() % 8, 0);
+
+impl EventNode {
+    pub fn is_free(&self) -> bool {
+        self.prev == NO_NODE
+    }
+}
+
+const EVENT_SIZE: usize = 144;
+// #[account] // (zero_copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Copy, Clone)]
+pub struct AnyEvent {
+    pub event_type: u8,
+    pub padding: [u8; 143],
+}
+
+impl Default for AnyEvent {
+    fn default() -> Self {
+        AnyEvent {
+            event_type: 0,
+            padding: [0; 143],
+        }
+    }
+}
+
+const_assert_eq!(size_of::<AnyEvent>(), EVENT_SIZE);
+
+#[account] // (zero_copy)]
+#[derive(Debug)] //, Clone)]
 pub struct EventHeap {
     pub header: EventHeapHeader,
     pub nodes: [EventNode; MAX_NUM_EVENTS as usize],
@@ -100,8 +140,24 @@ const_assert_eq!(
     16 + MAX_NUM_EVENTS as usize * (EVENT_SIZE + 8) + 64
 );
 
+impl Default for EventHeap {
+    fn default() -> Self {
+        EventHeap {
+            header: EventHeapHeader {
+                free_head: 0,
+                used_head: 0,
+                count: 0,
+                _padd: 0,
+                seq_num: 0,
+            },
+            nodes: [EventNode::default(); MAX_NUM_EVENTS as usize],
+            reserved: [0; 64],
+        }
+    }
+}
 
-#[account(zero_copy)]
+
+#[account] // (zero_copy)]
 pub struct OracleConfig {
     pub conf_filter: f64,
     pub max_staleness_slots: i64,
@@ -111,7 +167,7 @@ const_assert_eq!(size_of::<OracleConfig>(), 8 + 8 + 72);
 const_assert_eq!(size_of::<OracleConfig>(), 88);
 const_assert_eq!(size_of::<OracleConfig>() % 8, 0);
 
-#[account(zero_copy)]
+#[account] // (zero_copy)]
 pub struct Market {
     /// PDA bump
     pub bump: u8,
@@ -277,7 +333,7 @@ pub struct InnerNode {
     pub key: u128,
 
     /// indexes into `BookSide::nodes`
-    pub children: [NodeHandle; 2],
+    pub children: [u32; 2],
 
     /// The earliest expiry timestamp for the left and right subtrees.
     ///
@@ -288,7 +344,7 @@ pub struct InnerNode {
     pub reserved: [u8; 40],
 }
 const_assert_eq!(/*size_of::<InnerNode>()*/NODE_SIZE, 4 + 4 + 16 + 4 * 2 + 8 * 2 + 40);
-// const_assert_eq!(size_of::<InnerNode>(), NODE_SIZE);
+const_assert_eq!(size_of::<InnerNode>(), NODE_SIZE);
 const_assert_eq!(size_of::<InnerNode>() % 8, 0);
 
 /// LeafNodes represent an order in the binary tree
@@ -299,7 +355,7 @@ const_assert_eq!(size_of::<InnerNode>() % 8, 0);
     PartialEq,
     Eq,
     // bytemuck::Pod,
-    bytemuck::Zeroable,
+    // bytemuck::Zeroable,
     AnchorSerialize,
     AnchorDeserialize,
 )]
@@ -342,15 +398,15 @@ const_assert_eq!(
     /* size_of::<LeafNode>() */NODE_SIZE,
     4 + 1 + 1 + 1 + 1 + 16 + 32 + 8 + 8 + 8 + 8
 );
-// const_assert_eq!(size_of::<LeafNode>(), NODE_SIZE);
+const_assert_eq!(size_of::<LeafNode>(), NODE_SIZE);
 const_assert_eq!(size_of::<LeafNode>() % 8, 0);
 
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone /*, bytemuck::Pod, bytemuck::Zeroable*/)]
 #[repr(C)]
 pub struct FreeNode {
     pub(crate) tag: u8, // NodeTag
     pub(crate) padding: [u8; 3],
-    pub(crate) next: NodeHandle,
+    pub(crate) next: u32,
     pub(crate) reserved: [u8; NODE_SIZE - 16],
     // essential to make AnyNode alignment the same as other node types
     pub(crate) force_align: u64,
@@ -358,7 +414,7 @@ pub struct FreeNode {
 const_assert_eq!(size_of::<FreeNode>(), NODE_SIZE);
 const_assert_eq!(size_of::<FreeNode>() % 8, 0);
 
-#[zero_copy]
+// #[zero_copy]
 pub struct AnyNode {
     pub tag: u8,
     pub data: [u8; 79],
@@ -387,7 +443,8 @@ pub enum Side {
 }
 
 
-#[account(zero_copy)]
+// #[account] // (zero_copy)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Default)]
 pub struct EventHeapHeader {
     pub free_head: u16,
     pub used_head: u16,
@@ -397,31 +454,6 @@ pub struct EventHeapHeader {
 }
 const_assert_eq!(std::mem::size_of::<EventHeapHeader>(), 16);
 const_assert_eq!(std::mem::size_of::<EventHeapHeader>() % 8, 0);
-
-#[account(zero_copy)]
-pub struct EventNode {
-    pub next: u16,
-    pub prev: u16,
-    pub _pad: [u8; 4],
-    pub event: AnyEvent,
-}
-const_assert_eq!(std::mem::size_of::<EventNode>(), 8 + EVENT_SIZE);
-const_assert_eq!(std::mem::size_of::<EventNode>() % 8, 0);
-
-impl EventNode {
-    pub fn is_free(&self) -> bool {
-        self.prev == NO_NODE
-    }
-}
-
-const EVENT_SIZE: usize = 144;
-#[account(zero_copy)]
-pub struct AnyEvent {
-    pub event_type: u8,
-    pub padding: [u8; 143],
-}
-
-const_assert_eq!(size_of::<AnyEvent>(), EVENT_SIZE);
 
 #[derive(
     Eq,
@@ -435,7 +467,7 @@ pub enum EventType {
 }
 
 #[derive(
-    Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, AnchorSerialize, AnchorDeserialize,
+    Copy, Clone, Debug, /*bytemuck::Pod, bytemuck::Zeroable,*/ AnchorSerialize, AnchorDeserialize,
 )]
 #[repr(C)]
 pub struct FillEvent {
@@ -465,7 +497,7 @@ const_assert_eq!(size_of::<FillEvent>() % 8, 0);
 const_assert_eq!(size_of::<FillEvent>(), EVENT_SIZE);
 
 #[derive(
-    Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable, AnchorSerialize, AnchorDeserialize,
+    Copy, Clone, Debug, /*bytemuck::Pod, bytemuck::Zeroable,*/ AnchorSerialize, AnchorDeserialize,
 )]
 #[repr(C)]
 pub struct OutEvent {
@@ -484,215 +516,214 @@ const_assert_eq!(size_of::<OutEvent>(), EVENT_SIZE);
 
 // From OpenBook V2 order_type.rs
 
-#[derive(
-    Eq,
-    PartialEq,
-    Copy,
-    Clone,
-    TryFromPrimitive,
-    IntoPrimitive,
-    Debug,
-    AnchorSerialize,
-    AnchorDeserialize,
-)]
-#[repr(u8)]
-pub enum BookSideOrderTree {
-    Fixed = 0,
-    OraclePegged = 1,
-}
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Copy,
+//     Clone,
+//     TryFromPrimitive,
+//     IntoPrimitive,
+//     Debug,
+//     AnchorSerialize,
+//     AnchorDeserialize,
+// )]
+// #[repr(u8)]
+// pub enum BookSideOrderTree {
+//     Fixed = 0,
+//     OraclePegged = 1,
+// }
 
-#[derive(
-    Eq,
-    PartialEq,
-    Copy,
-    Clone,
-    TryFromPrimitive,
-    IntoPrimitive,
-    Debug,
-    AnchorSerialize,
-    AnchorDeserialize,
-)]
-#[repr(u8)]
-pub enum OrderTreeType {
-    Bids,
-    Asks,
-}
-
-
-impl OrderTreeType {
-    pub fn side(&self) -> Side {
-        match *self {
-            Self::Bids => Side::Bid,
-            Self::Asks => Side::Ask,
-        }
-    }
-}
-
-trait MapTrait {
-    fn get_full_path() -> String;
-    fn create_type() -> Option<IdlTypeDef>;
-    fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>);
-}
-impl MapTrait for u32 {
-    fn get_full_path() -> String {
-        "u32".to_string()
-    }
-    fn create_type() -> Option<IdlTypeDef> {
-        // Your logic here
-        None
-    }
-    fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
-        // Your logic here
-    }
-}
-
-#[account(zero_copy)]
-pub struct OrderTreeRoot {
-    pub maybe_node: NodeHandle,
-    pub leaf_count: u32,
-}
-const_assert_eq!(std::mem::size_of::<OrderTreeRoot>(), 8);
-const_assert_eq!(std::mem::size_of::<OrderTreeRoot>() % 8, 0);
-
-/// A binary tree on AnyNode::key()
-///
-/// The key encodes the price in the top 64 bits.
-#[account(zero_copy)]
-pub struct OrderTreeNodes {
-    pub order_tree_type: u8, // OrderTreeType, but that's not POD
-    pub padding: [u8; 3],
-    pub bump_index: u32,
-    pub free_list_len: u32,
-    pub free_list_head: NodeHandle,
-    pub reserved: [u8; 512],
-    pub nodes: [AnyNode; MAX_ORDERTREE_NODES],
-}
-const_assert_eq!(
-    std::mem::size_of::<OrderTreeNodes>(),
-    1 + 3 + 4 * 2 + 4 + 512 + 88 * 1024
-);
-const_assert_eq!(std::mem::size_of::<OrderTreeNodes>(), 90640);
-const_assert_eq!(std::mem::size_of::<OrderTreeNodes>() % 8, 0);
-
-pub type NodeHandle = u32;
-const NODE_SIZE: usize = 88;
-
-/// Reference to a node in a book side component
-pub struct BookSideOrderHandle {
-    pub node: NodeHandle,
-    pub order_tree: BookSideOrderTree,
-}
-
-#[account(zero_copy)]
-pub struct BookSide {
-    pub roots: [OrderTreeRoot; 2],
-    pub reserved_roots: [OrderTreeRoot; 4],
-    pub reserved: [u8; 256],
-    pub nodes: OrderTreeNodes,
-}
-const_assert_eq!(
-    std::mem::size_of::<BookSide>(),
-    std::mem::size_of::<OrderTreeNodes>() + 6 * std::mem::size_of::<OrderTreeRoot>() + 256
-);
-const_assert_eq!(std::mem::size_of::<BookSide>(), 90944);
-const_assert_eq!(std::mem::size_of::<BookSide>() % 8, 0);
-
-#[derive(
-    Eq,
-    PartialEq,
-    Debug,
-)]
-#[repr(u8)]
-pub enum PlaceOrderType {
-    /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
-    /// If any base_quantity or quote_quantity remains, place an order on the book
-    Limit = 0,
-
-    /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
-    /// Never place an order on the book.
-    ImmediateOrCancel = 1,
-
-    /// Never take any existing orders, post the order on the book if possible.
-    /// If existing orders can match with this order, do nothing.
-    PostOnly = 2,
-
-    /// Ignore price and take orders up to max_base_quantity and max_quote_quantity.
-    /// Never place an order on the book.
-    ///
-    /// Equivalent to ImmediateOrCancel with price=i64::MAX.
-    Market = 3,
-
-    /// If existing orders match with this order, adjust the price to just barely
-    /// not match. Always places an order on the book.
-    PostOnlySlide = 4,
-
-    /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
-    /// Abort if partially executed, never place an order on the book.
-    FillOrKill = 5,
-}
-
-#[derive(
-    Eq,
-    PartialEq,
-    Debug,
-)]
-#[repr(u8)]
-pub enum PostOrderType {
-    /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
-    /// If any base_quantity or quote_quantity remains, place an order on the book
-    Limit = 0,
-
-    /// Never take any existing orders, post the order on the book if possible.
-    /// If existing orders can match with this order, do nothing.
-    PostOnly = 2,
-
-    /// If existing orders match with this order, adjust the price to just barely
-    /// not match. Always places an order on the book.
-    PostOnlySlide = 4,
-}
-
-#[derive(
-    Eq,
-    PartialEq,
-    Debug,
-    Default
-)]
-#[repr(u8)]
-/// Self trade behavior controls how taker orders interact with resting limit orders of the same account.
-/// This setting has no influence on placing a resting or oracle pegged limit order that does not match
-/// immediately, instead it's the responsibility of the user to correctly configure his taker orders.
-pub enum SelfTradeBehavior {
-    /// Both the maker and taker sides of the matched orders are decremented.
-    /// This is equivalent to a normal order match, except for the fact that no fees are applied.
-    #[default]
-    DecrementTake = 0,
-
-    /// Cancels the maker side of the trade, the taker side gets matched with other maker's orders.
-    CancelProvide = 1,
-
-    /// Cancels the whole transaction as soon as a self-matching scenario is encountered.
-    AbortTransaction = 2,
-}
-
-/// SideAndOrderTree is a storage optimization, so we don't need two bytes for the data
-#[derive(
-    Eq,
-    PartialEq,
-    Debug,
-)]
-#[repr(u8)]
-pub enum SideAndOrderTree {
-    BidFixed = 0,
-    AskFixed = 1,
-    BidOraclePegged = 2,
-    AskOraclePegged = 3,
-}
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Copy,
+//     Clone,
+//     TryFromPrimitive,
+//     IntoPrimitive,
+//     Debug,
+//     AnchorSerialize,
+//     AnchorDeserialize,
+// )]
+// #[repr(u8)]
+// pub enum OrderTreeType {
+//     Bids,
+//     Asks,
+// }
 
 
-    #[error_code]
-    pub enum OpenBookError {
-        #[msg("Invalid order post-market provided.")]
-        InvalidOrderPostMarket,
-        #[msg("Invalid order post-only provided.")]
-        InvalidOrderPostIOC,
-    }
+// impl OrderTreeType {
+//     pub fn side(&self) -> Side {
+//         match *self {
+//             Self::Bids => Side::Bid,
+//             Self::Asks => Side::Ask,
+//         }
+//     }
+// }
+
+// // trait MapTrait {
+// //     fn get_full_path() -> String;
+// //     fn create_type() -> Option<IdlTypeDef>;
+// //     fn insert_types(types: &mut BTreeMap<String, IdlTypeDef>);
+// // }
+// // impl MapTrait for u32 {
+// //     fn get_full_path() -> String {
+// //         "u32".to_string()
+// //     }
+// //     fn create_type() -> Option<IdlTypeDef> {
+// //         // Your logic here
+// //         None
+// //     }
+// //     fn insert_types(_types: &mut BTreeMap<String, IdlTypeDef>) {
+// //         // Your logic here
+// //     }
+// // }
+
+// #[account(zero_copy)]
+// pub struct OrderTreeRoot {
+//     pub maybe_node: u32,
+//     pub leaf_count: u32,
+// }
+// const_assert_eq!(std::mem::size_of::<OrderTreeRoot>(), 8);
+// const_assert_eq!(std::mem::size_of::<OrderTreeRoot>() % 8, 0);
+
+// /// A binary tree on AnyNode::key()
+// ///
+// /// The key encodes the price in the top 64 bits.
+// #[account(zero_copy)]
+// pub struct OrderTreeNodes {
+//     pub order_tree_type: u8, // OrderTreeType, but that's not POD
+//     pub padding: [u8; 3],
+//     pub bump_index: u32,
+//     pub free_list_len: u32,
+//     pub free_list_head: u32,
+//     pub reserved: [u8; 512],
+//     pub nodes: [AnyNode; MAX_ORDERTREE_NODES],
+// }
+// const_assert_eq!(
+//     std::mem::size_of::<OrderTreeNodes>(),
+//     1 + 3 + 4 * 2 + 4 + 512 + 88 * 1024
+// );
+// const_assert_eq!(std::mem::size_of::<OrderTreeNodes>(), 90640);
+// const_assert_eq!(std::mem::size_of::<OrderTreeNodes>() % 8, 0);
+
+// const NODE_SIZE: usize = 88;
+
+// /// Reference to a node in a book side component
+// pub struct BookSideOrderHandle {
+//     pub node: u32,
+//     pub order_tree: BookSideOrderTree,
+// }
+
+// #[account] // (zero_copy)]
+// pub struct BookSide {
+//     pub roots: [OrderTreeRoot; 2],
+//     pub reserved_roots: [OrderTreeRoot; 4],
+//     pub reserved: [u8; 256],
+//     pub nodes: OrderTreeNodes,
+// }
+// const_assert_eq!(
+//     std::mem::size_of::<BookSide>(),
+//     std::mem::size_of::<OrderTreeNodes>() + 6 * std::mem::size_of::<OrderTreeRoot>() + 256
+// );
+// const_assert_eq!(std::mem::size_of::<BookSide>(), 90944);
+// const_assert_eq!(std::mem::size_of::<BookSide>() % 8, 0);
+
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Debug,
+// )]
+// #[repr(u8)]
+// pub enum PlaceOrderType {
+//     /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
+//     /// If any base_quantity or quote_quantity remains, place an order on the book
+//     Limit = 0,
+
+//     /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
+//     /// Never place an order on the book.
+//     ImmediateOrCancel = 1,
+
+    // / Never take any existing orders, post the order on the book if possible.
+    // / If existing orders can match with this order, do nothing.
+//     PostOnly = 2,
+
+//     /// Ignore price and take orders up to max_base_quantity and max_quote_quantity.
+//     /// Never place an order on the book.
+//     ///
+//     /// Equivalent to ImmediateOrCancel with price=i64::MAX.
+//     Market = 3,
+
+//     /// If existing orders match with this order, adjust the price to just barely
+//     /// not match. Always places an order on the book.
+//     PostOnlySlide = 4,
+
+//     /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
+//     /// Abort if partially executed, never place an order on the book.
+//     FillOrKill = 5,
+// }
+
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Debug,
+// )]
+// #[repr(u8)]
+// pub enum PostOrderType {
+//     /// Take existing orders up to price, max_base_quantity and max_quote_quantity.
+//     /// If any base_quantity or quote_quantity remains, place an order on the book
+//     Limit = 0,
+
+//     /// Never take any existing orders, post the order on the book if possible.
+//     /// If existing orders can match with this order, do nothing.
+//     PostOnly = 2,
+
+//     /// If existing orders match with this order, adjust the price to just barely
+//     /// not match. Always places an order on the book.
+//     PostOnlySlide = 4,
+// }
+
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Debug,
+//     Default
+// )]
+// #[repr(u8)]
+// /// Self trade behavior controls how taker orders interact with resting limit orders of the same account.
+// /// This setting has no influence on placing a resting or oracle pegged limit order that does not match
+// /// immediately, instead it's the responsibility of the user to correctly configure his taker orders.
+// pub enum SelfTradeBehavior {
+//     /// Both the maker and taker sides of the matched orders are decremented.
+//     /// This is equivalent to a normal order match, except for the fact that no fees are applied.
+//     #[default]
+//     DecrementTake = 0,
+
+//     /// Cancels the maker side of the trade, the taker side gets matched with other maker's orders.
+//     CancelProvide = 1,
+
+//     /// Cancels the whole transaction as soon as a self-matching scenario is encountered.
+//     AbortTransaction = 2,
+// }
+
+// /// SideAndOrderTree is a storage optimization, so we don't need two bytes for the data
+// #[derive(
+//     Eq,
+//     PartialEq,
+//     Debug,
+// )]
+// #[repr(u8)]
+// pub enum SideAndOrderTree {
+//     BidFixed = 0,
+//     AskFixed = 1,
+//     BidOraclePegged = 2,
+//     AskOraclePegged = 3,
+// }
+
+
+//     #[error_code]
+//     pub enum OpenBookError {
+//         #[msg("Invalid order post-market provided.")]
+//         InvalidOrderPostMarket,
+//         #[msg("Invalid order post-only provided.")]
+//         InvalidOrderPostIOC,
+//     }

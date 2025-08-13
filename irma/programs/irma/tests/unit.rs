@@ -1,6 +1,8 @@
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use anchor_lang::prelude::*;
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::system_program;
@@ -8,6 +10,7 @@ mod tests {
     // use anchor_lang::prelude::Account;
     use anchor_lang::prelude::Program;
     use anchor_lang::context::Context;
+    use solana_program::pubkey;
     // use bytemuck::bytes_of_mut;
     // use anchor_lang::Discriminator;
     use irma::IRMA_ID;
@@ -15,7 +18,7 @@ mod tests {
     use irma::pricing::{StateMap, StableState};
     use irma::pricing::{init_pricing, set_mint_price, mint_irma, redeem_irma, list_reserves};
     use irma::pricing::MAX_BACKING_COUNT;
-    use irma::{Common, Init, CommonBumps, InitBumps};
+    use irma::{Init, Common, Maint};
 
     
     fn allocate_state() -> StateMap {
@@ -26,7 +29,7 @@ mod tests {
         let mut state: StateMap = allocate_state();
         let usdt: StableState = 
             StableState::new("USDT", pubkey!("Es9vMFrzaTmVRL3P15S3BtQDvVwWZEzPDk1e45sA2v6p"), 6 as u64).unwrap();
-        state.add_stablecoin(usdt);
+        state.add_reserve(usdt);
         assert_eq!(state.len(), 1);
         state
     }
@@ -37,18 +40,18 @@ mod tests {
         let quote_token: &str = "USDT";
         let new_price: f64 = 1.23;
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             // assert_eq!(mut_reserve.mint_price, 1.0);
             mut_reserve.mint_price = 1.0;
         }
         {
-            assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price, 1.0);
+            assert_eq!(state.get_stablecoin(quote_token).unwrap().mint_price, 1.0);
         }
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.mint_price = new_price;
         }
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price, new_price);
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().mint_price, new_price);
         Ok(())
     }
 
@@ -57,16 +60,16 @@ mod tests {
         let mut state = init_state();
         let quote_token = "USDT";
         let amount = 100;
-        let price = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.mint_price;
-        let prev_circulation = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation;
-        let prev_reserve = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves;
+        let price = state.get_stablecoin(quote_token).unwrap().mint_price;
+        let prev_circulation = state.get_stablecoin(quote_token).unwrap().irma_in_circulation;
+        let prev_reserve = state.get_stablecoin(quote_token).unwrap().backing_reserves;
         // Simulate mint_irma logic
-        let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+        let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
         mut_reserve.backing_reserves += amount;
         mut_reserve.irma_in_circulation += (amount as f64 / price).ceil() as u64;
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves, 
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().backing_reserves, 
             prev_reserve + amount);
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation, 
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().irma_in_circulation, 
             prev_circulation + (amount as f64 / price).ceil() as u64);
         Ok(())
     }
@@ -76,16 +79,16 @@ mod tests {
         let mut state = init_state();
         let quote_token = "USDT";
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.backing_reserves = 1000;
         }
-        let prev_backing = state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves;
+        let prev_backing = state.get_stablecoin(quote_token).unwrap().backing_reserves;
         {
-            let mut_reserve = state.get_mut_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin(quote_token).unwrap();
             mut_reserve.backing_reserves -= 100;
         }
         // Simulate redeem_irma logic (simple case)
-        assert_eq!(state.get_stablecoin(quote_token).ok_or(CustomError::InvalidQuoteToken)?.backing_reserves, prev_backing - 100);
+        assert_eq!(state.get_stablecoin(quote_token).unwrap().backing_reserves, prev_backing - 100);
         Ok(())
     }
 
@@ -96,18 +99,18 @@ mod tests {
         let irma_amount = 5;
         {
             // Manipulate state to create a price difference
-            let mut_reserve = state.get_mut_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_reserve = state.get_mut_stablecoin("USDT").unwrap();
             mut_reserve.mint_price = 2.0;
             mut_reserve.backing_reserves = 1000;
             mut_reserve.irma_in_circulation = 100;
             mut_reserve.irma_in_circulation -= irma_amount;
         }
-        assert_eq!(state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation, 
+        assert_eq!(state.get_stablecoin("USDT").unwrap().irma_in_circulation, 
             prev_circulation - irma_amount);
         Ok(())
     }
 
-    fn prep_accounts(owner: &'static Pubkey, state_account: Pubkey) -> (AccountInfo<'static>, AccountInfo<'static>, AccountInfo<'static>) {
+    fn prep_accounts<'info>(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
         // Create a buffer for StateMap and wrap it in AccountInfo
         let lamports: &mut u64 = Box::leak(Box::new(100000u64));
         let mut state: StateMap = allocate_state();
@@ -117,10 +120,10 @@ mod tests {
         let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
         state.try_serialize(&mut state_data_vec).unwrap();
 
-        let state_data: &'static mut Vec<u8> = Box::leak(Box::new(state_data_vec));
-        let state_key: &'static mut Pubkey = Box::leak(Box::new(state_account));
+        let state_data: &'info mut Vec<u8> = Box::leak(Box::new(state_data_vec));
+        let state_key: &'info mut Pubkey = Box::leak(Box::new(state_account));
         // msg!("StateMap pre-test account data: {:?}", state_data);
-        let state_account_info: AccountInfo<'static> = AccountInfo::new(
+        let state_account_info: AccountInfo<'info> = AccountInfo::new(
             state_key,
             false, // is_signer
             true,  // is_writable
@@ -133,11 +136,11 @@ mod tests {
         // msg!("StateMap account created: {:?}", state_account_info.key);
         // msg!("StateMap owner: {:?}", owner);
         // Use a mock Signer for testing purposes
-        let signer_pubkey: &'static mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
-        let lamportsx: &'static mut u64 = Box::leak(Box::new(0u64));
-        let data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let owner: &'static mut Pubkey = Box::leak(Box::new(Pubkey::default()));
-        let signer_account_info: AccountInfo<'static> = AccountInfo::new(
+        let signer_pubkey: &'info mut Pubkey = Box::leak(Box::new(Pubkey::new_unique()));
+        let lamportsx: &'info mut u64 = Box::leak(Box::new(0u64));
+        let data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+        let owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+        let signer_account_info: AccountInfo<'info> = AccountInfo::new(
             signer_pubkey,
             true, // is_signer
             false, // is_writable
@@ -148,10 +151,10 @@ mod tests {
             0,
         );
         // Create AccountInfo for system_program
-        let sys_lamports: &'static mut u64 = Box::leak(Box::new(0u64));
-        let sys_data: &'static mut Vec<u8> = Box::leak(Box::new(vec![]));
-        let sys_owner: &'static mut Pubkey = Box::leak(Box::new(Pubkey::default()));
-        let sys_account_info: AccountInfo<'static> = AccountInfo::new(
+        let sys_lamports: &'info mut u64 = Box::leak(Box::new(0u64));
+        let sys_data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
+        let sys_owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
+        let sys_account_info: AccountInfo<'info> = AccountInfo::new(
             &system_program::ID,
             false, // is_signer
             false, // is_writable
@@ -164,17 +167,17 @@ mod tests {
         (state_account_info, signer_account_info, sys_account_info)
     }
 
-    fn initialize_anchor(program_id: &'static Pubkey) -> (Account<'static, StateMap>, Signer<'static>, Program<'static, anchor_lang::system_program::System>) {
-        //                 state_account_info: &'static AccountInfo<'static>) {
-        //                 sys_account_info: &AccountInfo<'static>) {
-        // let program_id: &'static Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
+    fn initialize_anchor<'info>(program_id: &'info Pubkey) -> (Account<'info, StateMap>, Signer<'info>, Program<'info, anchor_lang::system_program::System>) {
+        //                 state_account_info: &'info AccountInfo<'info>) {
+        //                 sys_account_info: &AccountInfo<'info>) {
+        // let program_id: &'info Pubkey = Box::leak(Box::new(Pubkey::new_from_array(irma::ID.to_bytes())));
         let state_account: Pubkey = Pubkey::find_program_address(&[b"state".as_ref()], program_id).0;
         let (state_account_info, irma_admin_account_info, sys_account_info) 
                  = prep_accounts(program_id, state_account);
         // Bind to variables to extend their lifetime
-        let state_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(state_account_info));
-        let irma_admin_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(irma_admin_account_info));
-        let sys_account_static: &'static AccountInfo<'static> = Box::leak(Box::new(sys_account_info));
+        let state_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(state_account_info));
+        let irma_admin_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(irma_admin_account_info));
+        let sys_account_static: &'info AccountInfo<'info> = Box::leak(Box::new(sys_account_info));
         let mut accounts: Init<'_> = Init {
             state: Account::try_from(state_account_static).unwrap(),
             irma_admin: Signer::try_from(irma_admin_account_static).unwrap(),
@@ -184,20 +187,20 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            InitBumps::default(), // Use default bumps if not needed
+            BTreeMap::<String, u8>::default(), // Use default bumps if not needed
         );
         let result: std::result::Result<(), Error> = init_pricing(ctx);
         assert!(result.is_ok());
-        msg!("StateMap account: {:?}", accounts.state);
+        // msg!("StateMap account: {:?}", accounts.state);
         return (accounts.state, accounts.irma_admin, accounts.system_program);
     }
 
     #[test]
-    fn test_initialize_anchor() {
+    fn test_initialize_anchor<'info>() {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing init_pricing IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
         // Bind to variables to extend their lifetime
@@ -210,19 +213,19 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            InitBumps::default(), // Use default bumps if not needed
+            BTreeMap::<String, u8>::default(), // Use default bumps if not needed
         );
         let result: std::result::Result<(), Error> = init_pricing(ctx);
         assert!(result.is_ok());
         msg!("StateMap account initialized successfully: {:?}", accounts.state);
-    }
+   }
 
     #[test]
-    fn test_set_mint_price_anchor() {
+    fn test_set_mint_price_anchor<'info>() {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing set IRMA mint price with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
         // Bind to variables to extend their lifetime
@@ -235,7 +238,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result: std::result::Result<(), Error> = set_mint_price(ctx, "USDT", 1.5);
         assert!(result.is_ok());
@@ -244,7 +247,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = set_mint_price(ctx, "USDC", 1.8);
         assert!(result.is_ok());
@@ -252,7 +255,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = set_mint_price(ctx, "FDUSD", 1.3);
         assert!(result.is_ok());
@@ -262,11 +265,11 @@ mod tests {
     }
 
     #[test]
-    fn test_mint_irma_anchor() -> Result<()> {
+    fn test_mint_irma_anchor<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing mint IRMA with normal conditions");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         // let state_account: Pubkey = Pubkey::find_program_address(&[b"state".as_ref()], program_id).0;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
@@ -278,22 +281,22 @@ mod tests {
         };
         msg!("Pre-mint IRMA state:");
         msg!("Backing reserves for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDT").unwrap().backing_reserves);
         msg!("Backing reserves for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("PYUSD").unwrap().backing_reserves);
         msg!("Backing reserves for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDG").unwrap().backing_reserves);
         msg!("IRMA in circulation for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDT").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("PYUSD").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDG").unwrap().irma_in_circulation);
         let mut ctx: Context<Common> = Context::new(
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result = mint_irma(ctx, "USDT", 100);
         match result {
@@ -308,7 +311,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = mint_irma(ctx, "PYUSD", 1000);
         match result {
@@ -323,7 +326,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = mint_irma(ctx, "USDG", 10000);
         match result {
@@ -337,27 +340,27 @@ mod tests {
         msg!("-------------------------------------------------------------------------");
         msg!("Post-mint IRMA state:");
         msg!("Backing reserves for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDT").unwrap().backing_reserves);
         msg!("Backing reserves for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("PYUSD").unwrap().backing_reserves);
         msg!("Backing reserves for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            accounts.state.get_stablecoin("USDG").unwrap().backing_reserves);
         msg!("IRMA in circulation for USDT: {:?}", 
-            accounts.state.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDT").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for PYUSD: {:?}", 
-            accounts.state.get_stablecoin("PYUSD").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("PYUSD").unwrap().irma_in_circulation);
         msg!("IRMA in circulation for USDG: {:?}", 
-            accounts.state.get_stablecoin("USDG").ok_or(CustomError::InvalidQuoteToken)?.irma_in_circulation);
+            accounts.state.get_stablecoin("USDG").unwrap().irma_in_circulation);
         Ok(())
     }
 
 
     #[test]
-    fn test_redeem_irma_anchor() -> Result<()> {
+    fn test_redeem_irma_anchor<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA when mint price is less than redemption price");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
             = initialize_anchor(program_id);
         let mut accounts: Common<'_> = Common {
@@ -370,7 +373,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(),
+                BTreeMap::<String, u8>::default(),
             );
             msg!("Pre-redeem IRMA state 1:");
             msg!("Backing reserves: {}", list_reserves(ctx));
@@ -382,7 +385,7 @@ mod tests {
                 msg!("Skipping non-existent stablecoin: {}", sc.symbol);
                 continue; // skip non-existent stablecoins
             }
-            let mut_backing = accounts.state.get_mut_stablecoin(&sc.symbol).ok_or(CustomError::InvalidQuoteToken)?;
+            let mut_backing = accounts.state.get_mut_stablecoin(&sc.symbol).unwrap();
             let reserve: &mut u64 = &mut mut_backing.backing_reserves;
             let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
             *reserve = 1000000; // Set a large reserve for testing
@@ -395,7 +398,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         let mut result: std::result::Result<(), Error> = redeem_irma(ctx, "USDC", 10);
         match result {
@@ -411,7 +414,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDT", 20);
         match result {
@@ -426,7 +429,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "PYUSD", 30);
         match result {
@@ -441,7 +444,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDG", 40);
         match result {
@@ -456,7 +459,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "FDUSD", 50);
         match result {
@@ -471,11 +474,11 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
 
         msg!("Mid-state for USDT before further redemption: {:?}", 
-            state_account.get_stablecoin("USDT").ok_or(CustomError::InvalidQuoteToken)?.backing_reserves);
+            state_account.get_stablecoin("USDT").unwrap().backing_reserves);
         // Test for near maximum redemption
         result = redeem_irma(ctx, "USDT", 10_000);
         match result {
@@ -490,7 +493,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         result = redeem_irma(ctx, "USDS", 10);
         match result {
@@ -509,11 +512,11 @@ mod tests {
 
     /// Test cases for when redemption price is less than mint price
     #[test]
-    fn test_redeem_irma_normal() -> Result<()> {
+    fn test_redeem_irma_normal<'info>() -> Result<()> {
         msg!("-------------------------------------------------------------------------");
         msg!("Testing redeem IRMA with normal conditions, but with large discrepancies in mint prices");  
         msg!("-------------------------------------------------------------------------");
-        let program_id: &'static Pubkey = &IRMA_ID;
+        let program_id: &'info Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
             = initialize_anchor(program_id);
         let mut accounts: Common<'_> = Common {
@@ -527,7 +530,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(),
+                BTreeMap::<String, u8>::default(),
             );
             msg!("Backing reserves: {}", list_reserves(ctx));
             let state: &mut StateMap = &mut accounts.state;
@@ -539,7 +542,7 @@ mod tests {
                     msg!("Skipping non-existent stablecoin: {}", sc.symbol);
                     continue; // skip non-existent stablecoins
                 }
-                let mut_backing = state.get_mut_stablecoin(&sc.symbol).ok_or(CustomError::InvalidQuoteToken)?;
+                let mut_backing = state.get_mut_stablecoin(&sc.symbol).unwrap();
                 let reserve: &mut u64 = &mut mut_backing.backing_reserves;
                 let circulation: &mut u64 = &mut mut_backing.irma_in_circulation;
                 let price: &mut f64 = &mut mut_backing.mint_price;
@@ -553,7 +556,7 @@ mod tests {
             program_id,
             &mut accounts,
             &[],
-            CommonBumps::default(),
+            BTreeMap::<String, u8>::default(),
         );
         // msg!("Current prices: {:?}", accounts.state.mint_price);
         // msg!("Backing reserves: {:?}", accounts.state.backing_reserves);
@@ -568,7 +571,7 @@ mod tests {
                 program_id,
                 &mut accounts,
                 &[],
-                CommonBumps::default(), // Use default bumps if not needed
+                BTreeMap::<String, u8>::default(), // Use default bumps if not needed
             );
             reslt = redeem_irma(ctx, "FDUSD", 100_000_000_000);
             match reslt {

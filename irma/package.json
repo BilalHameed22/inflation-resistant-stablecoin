@@ -7,7 +7,7 @@
     "test": "ts-mocha --timeout 20000 --reporter spec --require ts-node/register tests/**/*.ts"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.31.1"
+    "@coral-xyz/anchor": "^0.27.0"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",
