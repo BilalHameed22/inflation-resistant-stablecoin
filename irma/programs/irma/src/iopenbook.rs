@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::marker::Copy;
 use std::mem::size_of;
 use std::mem::align_of;
-use crate::borsh::{BorshSerialize, BorshDeserialize};
+// use crate::borsh::{BorshSerialize, BorshDeserialize};
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
@@ -74,7 +74,7 @@ pub struct ConsumeEvents<'info /*, ToAccountInfos, ToAccountMetas */> {
     #[account(
         init,
         // 10240 bytes is max space to allocate with init constraint
-        space = 840,
+        space = 16 + std::mem::size_of::<Market>(),
         payer = consume_events_admin,
     )]
     pub market: Account<'info, Market>, // AccountLoader<'info, Market>,
@@ -114,14 +114,16 @@ const EVENT_SIZE: usize = 144;
 #[derive(AnchorSerialize, AnchorDeserialize, Debug, Copy, Clone)]
 pub struct AnyEvent {
     pub event_type: u8,
-    pub padding: [u8; 143],
+    pub padding: [u8; 7],
+    pub _padding: [u64; 17],
 }
 
 impl Default for AnyEvent {
     fn default() -> Self {
         AnyEvent {
             event_type: 0,
-            padding: [0; 143],
+            padding: [0; 7],
+            _padding: [0; 17],
         }
     }
 }
@@ -129,10 +131,10 @@ impl Default for AnyEvent {
 const_assert_eq!(size_of::<AnyEvent>(), EVENT_SIZE);
 
 #[account] // (zero_copy)]
-#[derive(Debug)] //, Clone)]
+#[derive(Debug)]
 pub struct EventHeap {
     pub header: EventHeapHeader,
-    pub nodes: [EventNode; MAX_NUM_EVENTS as usize],
+    pub nodes: [[EventNode; 30]; 20], // [EventNode; MAX_NUM_EVENTS as usize],
     pub reserved: [u8; 64],
 }
 const_assert_eq!(
@@ -140,28 +142,29 @@ const_assert_eq!(
     16 + MAX_NUM_EVENTS as usize * (EVENT_SIZE + 8) + 64
 );
 
-impl Default for EventHeap {
-    fn default() -> Self {
-        EventHeap {
-            header: EventHeapHeader {
-                free_head: 0,
-                used_head: 0,
-                count: 0,
-                _padd: 0,
-                seq_num: 0,
-            },
-            nodes: [EventNode::default(); MAX_NUM_EVENTS as usize],
-            reserved: [0; 64],
-        }
-    }
-}
+// impl Default for EventHeap {
+//     fn default() -> Self {
+//         EventHeap {
+//             header: EventHeapHeader {
+//                 free_head: 0,
+//                 used_head: 0,
+//                 count: 0,
+//                 _padd: 0,
+//                 seq_num: 0,
+//             },
+//             nodes: [[EventNode::default(); 30 as usize]; 20],
+//             reserved: [0; 64],
+//         }
+//     }
+// }
 
 
-#[account] // (zero_copy)]
+// #[account] // (zero_copy)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Copy, Clone)]
 pub struct OracleConfig {
     pub conf_filter: f64,
     pub max_staleness_slots: i64,
-    pub reserved: [u8; 72],
+    pub reserved: [u64; 9], // [u8; 72],
 }
 const_assert_eq!(size_of::<OracleConfig>(), 8 + 8 + 72);
 const_assert_eq!(size_of::<OracleConfig>(), 88);
@@ -444,7 +447,7 @@ pub enum Side {
 
 
 // #[account] // (zero_copy)]
-#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Debug, Clone, Default)]
 pub struct EventHeapHeader {
     pub free_head: u16,
     pub used_head: u16,
@@ -509,7 +512,7 @@ pub struct OutEvent {
     pub seq_num: u64,
     pub owner: Pubkey,
     pub quantity: i64,
-    padding1: [u8; 80],
+    padding1: [u64; 10], // [u8; 80],
 }
 const_assert_eq!(size_of::<OutEvent>() % 8, 0);
 const_assert_eq!(size_of::<OutEvent>(), EVENT_SIZE);

@@ -21,7 +21,7 @@ no-log-ix-name = []
 
 [dependencies]
 anchor-lang = "0.27.0"
-openbook-v2 = { workspace = true, features = ["cpi"] }
+# openbook-v2 = { workspace = true, features = ["cpi"] }
 solana-program = { workspace = true }
 fixed = { workspace = true, features = ["debug-assert-in-release"] }
 static_assertions = "1.1.0"

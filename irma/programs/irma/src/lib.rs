@@ -56,9 +56,11 @@ pub use crate::pricing::{StateMap, StableState, Init, Common, Maint};
 pub mod crank_market;
 pub mod iopenbook;
 
-use crate::crank_market::{
+pub use crate::crank_market::{
     crank_market,
 };
+
+// pub use crate::iopenbook::{ConsumeEvents, Market, EventHeap, EventHeapHeader, EventNode, AnyEvent, OracleConfig};
 
 
 // use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
