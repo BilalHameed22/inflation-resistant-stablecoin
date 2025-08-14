@@ -87,7 +87,7 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
 
         // CHECK: following serializes typed object into a buffer.
         // let event_heap: EventHeap = alloc_heap();
-        const BUF_SIZE: usize = 1024; // std::mem::size_of::<EventHeap>();
+        const BUF_SIZE: usize = 1600; // std::mem::size_of::<EventHeap>();
         msg!("Allocating event heap, mem size: {}", BUF_SIZE);
         let event_heap_buffer = [0u8; BUF_SIZE]; // Vec::with_capacity(BUF_SIZE);
         let event_heap_ref: &'info mut [u8] = Box::leak(Box::new(event_heap_buffer)); // = &mut event_heap_buffer;
@@ -219,7 +219,7 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
             // msg!("Mocked market: {:?}", market);
             let binding = ctx.accounts.event_heap.to_account_info();
             let mut event_heap_buf = binding.data.borrow_mut();
-            let BUF_SIZE: usize = 1024; // = std::mem::size_of::<EventHeap>();
+            let BUF_SIZE: usize = 1600; // = std::mem::size_of::<EventHeap>();
             if event_heap_buf.len() < BUF_SIZE {
                 msg!("Event heap buffer too small, mock returning...");
                 return;
