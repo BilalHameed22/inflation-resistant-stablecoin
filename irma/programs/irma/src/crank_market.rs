@@ -35,16 +35,15 @@ use crate::iopenbook::{ConsumeEvents, Market, EventHeap, EventHeapHeader, EventN
 
 pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
 
-// use openbook_v2::state::EventHeap; // {EventHeap, Market};
-// // use openbook_v2::cpi::{consume_events, consume_given_events};
-// use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-// // use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
-// use openbook_v2::cpi::accounts::{ConsumeGivenEvents, PlaceOrder};
-
-// use std::borrow::Borrow;
-// use std::rc::Rc;
-// use std::cell::RefCell;
-// use std::borrow::Cow;
+use openbook_v2::state::EventHeap; // {EventHeap, Market};
+// use openbook_v2::cpi::{consume_events, consume_given_events};
+use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
+// use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
+use openbook_v2::cpi::accounts::{ConsumeGivenEvents, PlaceOrder};
+use std::borrow::Borrow;
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::cell::Ref;
 
 
 /// CHECK: following declares unsafe crank_market function - see comments above.
@@ -88,7 +87,7 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
 
         // CHECK: following serializes typed object into a buffer.
         // let event_heap: EventHeap = alloc_heap();
-        const BUF_SIZE: usize = std::mem::size_of::<EventHeap>();
+        const BUF_SIZE: usize = 1600; // std::mem::size_of::<EventHeap>();
         msg!("Allocating event heap, mem size: {}", BUF_SIZE);
         let event_heap_buffer = [0u8; BUF_SIZE]; // Vec::with_capacity(BUF_SIZE);
         let event_heap_ref: &'info mut [u8] = Box::leak(Box::new(event_heap_buffer)); // = &mut event_heap_buffer;
@@ -182,8 +181,25 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
 
     #[cfg(not(test))]
     {
-        fn alloc_heap() -> EventHeap {
-            let mut heap = EventHeap {
+        struct OurHeap {
+            header: EventHeapHeader,
+            nodes: [EventNode; 10], // Reduced size for testing
+            reserved: [u8; 64],
+        }
+        impl OurHeap {
+            fn try_to_vec(&self) -> Result<Vec<u8>> {
+                let mut buf = Vec::with_capacity(std::mem::size_of::<OurHeap>());
+                buf.extend_from_slice(&self.header.try_to_vec()?);
+                for node in &self.nodes {
+                    buf.extend_from_slice(&node.try_to_vec()?);
+                }
+                buf.extend_from_slice(&self.reserved);
+                Ok(buf)
+            }
+        }
+
+        fn alloc_heap() -> Box<OurHeap> {
+            let mut heap = Box::new(OurHeap {
                 header: EventHeapHeader {
                     free_head: 1u16,
                     used_head: 0u16,
@@ -199,9 +215,9 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
                         event_type: 0u8, // Placeholder for event type
                         padding: [0u8; 143], // Placeholder for event data
                     },
-                }; 600 as usize], // just the first 600 events
+                }; 10 as usize], // just the first 10 events
                 reserved: [0u8; 64],
-            };
+            });
             heap.nodes[0].event.event_type = 1; // Set the first event type to 1
             return heap;
         }
@@ -209,15 +225,16 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
         fn consume_given_events_mock<'info>(ctx: &CpiContext<'_, '_, 'info, 'info, ConsumeEvents<'info>>, _slots: Vec<u64>) {
             // mock implementation
             msg!("Mocking consume_given_events with slots: {:?}", _slots);
-            let event_heap: EventHeap = alloc_heap();
-            msg!("Mocked event heap header: {:?}", event_heap.header);
+            let event_heap = alloc_heap();
+            msg!("Mocked event heap header: {:?}", &event_heap.header);
+
             // let market_info: AccountInfo<'a> = ctx.accounts.market.to_account_info();
             // msg!("Market account key: {:?}", market_info.key);
             // let market: Market = alloc_mkt(market_info.key);
             // msg!("Mocked market: {:?}", market);
             let binding = ctx.accounts.event_heap.to_account_info();
             let mut event_heap_buf = binding.data.borrow_mut();
-            let BUF_SIZE: usize = std::mem::size_of::<EventHeap>();
+            let BUF_SIZE: usize = 1600; // = std::mem::size_of::<EventHeap>();
             if event_heap_buf.len() < BUF_SIZE {
                 msg!("Event heap buffer too small, mock returning...");
                 return;
@@ -236,21 +253,22 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
             // let mut cursor = Cursor::new(&mut market_buf[..]); // Create a Cursor from the slice
             // market.try_serialize(&mut cursor).unwrap();
             let header_size = std::mem::size_of::<EventHeapHeader>();
-            msg!("Mocked consume_given_events completed, event heap updated: {:?}", &event_heap_buf[..header_size]);
+            msg!("Mocked consume_given_events about to return, event heap updated: {:?}", &event_heap_buf[..header_size]);
         }
+
         msg!("Calling consume_given_events_mock...");
         let ctx = &this_ctx;
         consume_given_events_mock(ctx, vec![slot]);
     }
-    #[cfg(test)]
-    {
-        msg!("Calling consume_given_events...");
-        let ctx = &this_ctx;
-        openbook_v2::cpi::consume_given_events(ctx, vec![slot]);
-    }
+    // #[cfg(test)]
+    // {
+    //     msg!("Calling consume_given_events...");
+    //     let ctx = this_ctx.borrow();
+    //     openbook_v2::cpi::consume_given_events(ctx, vec![slot]);
+    // }
     let binding = this_ctx.accounts.event_heap.to_account_info();
-    let event_heap_buf = &binding.data;
-    msg!("Mocked consume_given_events completed, event heap updated: {:?}", event_heap_buf);
+    let event_heap_buf = <Rc<RefCell<&mut [u8]>> as Borrow<RefCell<&mut [u8]>>>::borrow(&binding.data).borrow();
+    msg!("consume_given_events completed, event heap updated: {}", event_heap_buf[0]);
 
     Ok(())
 }
