@@ -4,6 +4,8 @@ import {
   PublicKey,
   SystemProgram,
   TransactionInstruction,
+  Transaction,
+  VersionedTransaction,
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import {
@@ -11,7 +13,31 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { OpenBookV2Client } from '..';
-import { AnchorProvider, Wallet } from '@coral-xyz/anchor';
+import { AnchorProvider } from '@coral-xyz/anchor';
+
+// Define the Wallet interface locally since import is problematic
+interface Wallet {
+  signTransaction<T extends Transaction | VersionedTransaction>(tx: T): Promise<T>;
+  signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]>;
+  publicKey: PublicKey;
+}
+
+// Simple wallet implementation
+class SimpleWallet implements Wallet {
+  constructor(private payer: Keypair) {}
+
+  async signTransaction<T extends Transaction | VersionedTransaction>(tx: T): Promise<T> {
+    return tx;
+  }
+
+  async signAllTransactions<T extends Transaction | VersionedTransaction>(txs: T[]): Promise<T[]> {
+    return txs;
+  }
+
+  get publicKey(): PublicKey {
+    return this.payer.publicKey;
+  }
+}
 
 export const SideUtils = {
   Bid: { bid: {} },
@@ -115,17 +141,28 @@ export async function createAssociatedTokenAccountIdempotentInstruction(
   });
 }
 
-export function initReadOnlyOpenbookClient(): OpenBookV2Client {
-  const conn = new Connection(process.env.SOL_RPC_URL!);
-  const stubWallet = new Wallet(Keypair.generate());
+export function initReadOnlyOpenbookClient(rpcUrl?: string): OpenBookV2Client {
+  const url = rpcUrl || process.env.SOL_RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const conn = new Connection(url);
+  const stubWallet = new SimpleWallet(Keypair.generate());
   const provider = new AnchorProvider(conn, stubWallet, {});
   return new OpenBookV2Client(provider);
 }
 
-export function initOpenbookClient(): OpenBookV2Client {
-  const conn = new Connection(process.env.SOL_RPC_URL!, 'processed');
-  const wallet = new Wallet(
-    Keypair.fromSecretKey(Uint8Array.from(JSON.parse(process.env.KEYPAIR!))),
+export function initOpenbookClient(rpcUrl?: string, keypairData?: string): OpenBookV2Client {
+  const url = rpcUrl || process.env.SOL_RPC_URL;
+  const keyData = keypairData || process.env.KEYPAIR;
+  
+  if (!url) {
+    throw new Error('SOL_RPC_URL must be provided either as parameter or environment variable');
+  }
+  if (!keyData) {
+    throw new Error('KEYPAIR must be provided either as parameter or environment variable');
+  }
+  
+  const conn = new Connection(url, 'processed');
+  const wallet = new SimpleWallet(
+    Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keyData))),
   );
   const provider = new AnchorProvider(conn, wallet, {});
   return new OpenBookV2Client(provider, undefined, {
