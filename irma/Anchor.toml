@@ -1,5 +1,10 @@
 [toolchain]
 package_manager = "yarn"
+anchor_version = "0.32.1"
+
+[build]
+build_sbf = true
+skip_lint = false
 
 [features]
 resolution = true
@@ -19,8 +24,8 @@ irma = "4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
-wallet = "~/.config/solana/id.json"
+cluster = "Localnet"
+wallet = "~/.config/solana/phantom1.json"
 
 [test]
 startup_wait = 10000

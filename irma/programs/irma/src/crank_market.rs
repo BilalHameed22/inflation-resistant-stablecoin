@@ -14,8 +14,8 @@ use Vec;
 // use std::collections::BTreeMap;
 // use static_assertions::const_assert_eq;
 // use core::mem::size_of;
-// use solana_program::pubkey;
-use solana_program::pubkey;
+// use anchor_lang::solana_program::pubkey;
+use anchor_lang::solana_program::pubkey;
 
 use crate::pricing::{
     mint_irma,
@@ -35,9 +35,9 @@ use crate::iopenbook::{ConsumeEvents, Market, EventHeap, EventHeapHeader, EventN
 
 pub const OPENBOOKV2_ID: Pubkey = pubkey!("opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb");
 
-use openbook_v2::state::EventHeap; // {EventHeap, Market};
+// use openbook_v2::state::EventHeap; // {EventHeap, Market}; // Already imported from iopenbook
 // use openbook_v2::cpi::{consume_events, consume_given_events};
-use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
+// use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig}; // Already imported from iopenbook
 // use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
 use openbook_v2::cpi::accounts::{ConsumeGivenEvents, PlaceOrder};
 use std::borrow::Borrow;
@@ -46,9 +46,10 @@ use std::cell::RefCell;
 use std::cell::Ref;
 
 
-/// CHECK: following declares unsafe crank_market function - see comments above.
-/// CPI context and consume_given_events for OpenBook V2
-// pub fn crank_market<'c: 'info, 'info>( ctx: Context<'_, '_, 'c, 'info, ConsumeEvents>, slot: u64 ) -> Result<()> {
+// CHECK: following declares unsafe crank_market function - see comments above.
+// CPI context and consume_given_events for OpenBook V2
+// Temporarily commented out due to lifetime issues - not needed for Orca POC
+/*
 pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, slot: u64 ) -> Result<()> {
 
     msg!("Crank market called with slot: {}", slot);
@@ -153,7 +154,7 @@ pub fn crank_market<'info>( ctx: Context<'_, '_, 'info, 'info, Maint<'info>>, sl
     let sys_data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
     let sys_owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
     let sys_account_info: AccountInfo<'info> = AccountInfo::new(
-        &system_program::ID,
+        &anchor_lang::system_program::ID,
         false, // is_signer
         false, // is_writable
         sys_lamports,
@@ -317,4 +318,4 @@ fn oracle_input<'c: 'info,'info>(
     set_mint_price(ctx, stablecoin, mint_price)?;
     Ok(())
 }
-
+*/

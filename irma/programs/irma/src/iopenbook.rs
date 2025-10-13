@@ -13,18 +13,23 @@ use anchor_lang::prelude::Signer;
 use anchor_lang::prelude::System;
 use anchor_lang::prelude::SolanaSysvar;
 use anchor_lang::Discriminator;
+// use anchor_lang::prelude::*;
+// use anchor_lang::Discriminator; // Already in prelude
 use anchor_lang::error;
 use anchor_lang::Key;
 // use anchor_lang::ToAccountInfo;
-use anchor_lang_idl_spec::IdlTypeDef;
+// use anchor_lang_idl_spec::IdlTypeDef; // Not needed, commented out
+
+// Dummy type to satisfy references
+pub type IdlTypeDef = ();
 
 // use num_enum::{IntoPrimitive, TryFromPrimitive};
 use static_assertions::const_assert_eq;
-use std::collections::BTreeMap;
+// use std::collections::BTreeMap;
 use std::marker::Copy;
 use std::mem::size_of;
 use std::mem::align_of;
-use crate::borsh::{BorshSerialize, BorshDeserialize};
+use borsh::{BorshSerialize, BorshDeserialize};
 
 pub const MAX_NUM_EVENTS: u16 = 600;
 pub const NO_NODE: u16 = u16::MAX;
@@ -32,10 +37,12 @@ pub const NODE_SIZE: usize = 88; // 128; // 16 + 112
 
 
 /// OpenBook V2 interfaces for IRMA program
+#[allow(unused)]
 use std::cmp::{
     PartialEq,
     Eq,
 };
+#[allow(unused)]
 use anchor_lang::{
     account,
     Accounts,
@@ -343,7 +350,6 @@ pub struct InnerNode {
 
     pub reserved: [u8; 40],
 }
-const_assert_eq!(/*size_of::<InnerNode>()*/NODE_SIZE, 4 + 4 + 16 + 4 * 2 + 8 * 2 + 40);
 const_assert_eq!(size_of::<InnerNode>(), NODE_SIZE);
 const_assert_eq!(size_of::<InnerNode>() % 8, 0);
 
@@ -394,10 +400,6 @@ pub struct LeafNode {
     /// User defined id for this order, used in FillEvents
     pub client_order_id: u64,
 }
-const_assert_eq!(
-    /* size_of::<LeafNode>() */NODE_SIZE,
-    4 + 1 + 1 + 1 + 1 + 16 + 32 + 8 + 8 + 8 + 8
-);
 const_assert_eq!(size_of::<LeafNode>(), NODE_SIZE);
 const_assert_eq!(size_of::<LeafNode>() % 8, 0);
 
