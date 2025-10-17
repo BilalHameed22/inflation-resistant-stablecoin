@@ -8,9 +8,10 @@ use std::mem::size_of;
 // Import the state structs from your modules, as they are used in the account definitions.
 use pricing::{StateMap, StableState};
 use orca_integration::OrcaPoolState;
+use protocol_state::ProtocolState;
 
 // Declare your program's ID
-declare_id!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
+declare_id!("Fx8p5GAJzjBZTn3FHy9Y57Bo6DHpDuYNzURuimv4bA1N");
 
 // ====================================================================
 // START: DEFINE ALL INSTRUCTION ACCOUNT STRUCTS HERE
@@ -72,6 +73,39 @@ pub struct SimulateSwap<'info> {
 }
 
 // ====================================================================
+// Protocol State Management Contexts
+// ====================================================================
+
+#[derive(Accounts)]
+pub struct InitializeProtocol<'info> {
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + ProtocolState::LEN,
+        seeds = [b"protocol_state"],
+        bump
+    )]
+    pub protocol_state: Account<'info, ProtocolState>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMockPrices<'info> {
+    #[account(
+        mut,
+        seeds = [b"protocol_state"],
+        bump = protocol_state.bump,
+    )]
+    pub protocol_state: Account<'info, ProtocolState>,
+    
+    pub authority: Signer<'info>,
+}
+
+// ====================================================================
 // END: ACCOUNT STRUCT DEFINITIONS
 // ====================================================================
 
@@ -79,6 +113,8 @@ pub struct SimulateSwap<'info> {
 // pub mod iopenbook;
 pub mod orca_integration;
 pub mod pricing;
+pub mod protocol_state;
+pub mod position_manager;
 
 #[program]
 pub mod irma {
@@ -113,7 +149,60 @@ pub mod irma {
         pricing::get_prices(ctx, &quote_token)
     }
 
+    // ====================================================================
+    // Protocol State Management Instructions
+    // ====================================================================
+
+    /// Initialize the protocol state with initial prices and Orca pool information
+    /// This must be called once before any other protocol operations
+    pub fn initialize_protocol(
+        ctx: Context<InitializeProtocol>,
+        initial_mint_price: u64,
+        initial_redemption_price: u64,
+        whirlpool: Pubkey,
+        position: Pubkey,
+        token_a_mint: Pubkey,
+        token_b_mint: Pubkey,
+    ) -> Result<()> {
+        let protocol_state = &mut ctx.accounts.protocol_state;
+        
+        protocol_state.initialize(
+            ctx.accounts.authority.key(),
+            initial_mint_price,
+            initial_redemption_price,
+            whirlpool,
+            position,
+            token_a_mint,
+            token_b_mint,
+            ctx.bumps.protocol_state,
+        )?;
+        
+        msg!("Protocol successfully initialized!");
+        Ok(())
+    }
+
+    /// Update mock inflation prices
+    /// In production, this would be replaced by oracle data
+    pub fn update_mock_prices(
+        ctx: Context<UpdateMockPrices>,
+        new_mint_price: u64,
+        new_redemption_price: u64,
+    ) -> Result<()> {
+        let protocol_state = &mut ctx.accounts.protocol_state;
+        
+        // Verify the caller is authorized
+        protocol_state.verify_authority(&ctx.accounts.authority)?;
+        
+        // Update the prices
+        protocol_state.update_prices(new_mint_price, new_redemption_price)?;
+        
+        msg!("Mock prices updated successfully!");
+        Ok(())
+    }
+
+    // ====================================================================
     // Orca Integration Functions
+    // ====================================================================
     pub fn create_orca_pool(
         ctx: Context<CreateOrcaPool>,
         pool_id: Pubkey,
