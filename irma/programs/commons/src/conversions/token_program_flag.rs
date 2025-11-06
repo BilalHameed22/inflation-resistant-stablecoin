@@ -1,4 +1,5 @@
 use crate::*;
+use crate::dlmm::types::TokenProgramFlags;
 use std::ops::Deref;
 
 pub struct TokenProgramFlagWrapper(TokenProgramFlags);

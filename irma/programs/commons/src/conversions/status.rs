@@ -1,4 +1,5 @@
 use crate::*;
+use crate::dlmm::types::PairStatus;
 
 impl TryFrom<u8> for PairStatus {
     type Error = anyhow::Error;

@@ -1,14 +1,17 @@
-use anchor_lang::prelude::Ok; // disambiguate with std::result::Result::Ok
+use std::result::Result::Ok; // disambiguate with std::result::Result::Ok
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022::extension::transfer_hook;
 use anchor_spl::token_2022::spl_token_2022::*;
-use anchor_spl::{token::spl_token, token_2022::spl_token_2022::extension::*};
-use spl_transfer_hook_interface::onchain::add_extra_account_metas_for_execute;
+use anchor_spl::{
+    token::spl_token,
+    token::accessor::mint,
+    token_2022::spl_token_2022::extension::*};
+use spl_transfer_hook_interface::onchain::add_extra_accounts_for_execute_cpi; // add_extra_account_metas_for_execute;
 use crate::token_2022::transfer_fee::TransferFee;
 use crate::token_2022::transfer_fee::MAX_FEE_BASIS_POINTS;
-use crate::token_2022::accessor::mint;
-use crate::RemainingAccountsSlice;
-use crate::AccountsType;
+// use crate::token_2022::accessor::mint;
+use crate::dlmm::types::*;
+use crate::dlmm::accounts::*;
 
 const ONE_IN_BASIS_POINTS: u128 = MAX_FEE_BASIS_POINTS as u128;
 
@@ -89,15 +92,16 @@ pub fn get_extra_account_metas_for_transfer_hook(
                 mint_state.base.decimals,
             ).unwrap();
 
-        add_extra_account_metas_for_execute(
+        add_extra_accounts_for_execute_cpi(
             &mut transfer_ix,
-            &transfer_hook_program_id,
+            &mut vec![mint_account],
             &Pubkey::default(),
             &mint,
-            &Pubkey::default(),
-            &Pubkey::default(),
+            AccountInfo::<'_>::new(),
+            AccountInfo::<'_>::new(),
+            AccountInfo::<'_>::new(),
             0,
-            mint_account.data,
+            &[mint_account],
         );
         // .map_err(|e: anyhow::Error| anyhow!(e))?;
 
@@ -141,9 +145,9 @@ pub fn calculate_transfer_fee_excluded_amount(
 ) -> Result<TransferFeeExcludedAmount> {
     if let Some(epoch_transfer_fee) = get_epoch_transfer_fee(mint_account, epoch)? {
         let transfer_fee = epoch_transfer_fee
-            .calculate_fee(transfer_fee_included_amount).ok_or(anyhow!("overflow"))?;
+            .calculate_fee(transfer_fee_included_amount).ok_or("overflow").unwrap();
         let transfer_fee_excluded_amount = transfer_fee_included_amount
-            .checked_sub(transfer_fee).ok_or(anyhow!("overflow"))?;
+            .checked_sub(transfer_fee).ok_or("overflow").unwrap();
 
         return Ok(TransferFeeExcludedAmount {
             amount: transfer_fee_excluded_amount,
@@ -181,11 +185,11 @@ pub fn calculate_transfer_fee_included_amount(
                 u64::from(epoch_transfer_fee.maximum_fee)
             } else {
                 calculate_inverse_fee(&epoch_transfer_fee, transfer_fee_excluded_amount)
-                    .ok_or(anyhow!("overflow"))?
+                    .ok_or("overflow").unwrap()
             };
 
         let transfer_fee_included_amount = transfer_fee_excluded_amount
-            .checked_add(transfer_fee).ok_or(anyhow!("overflow"))?;
+            .checked_add(transfer_fee).ok_or("overflow").unwrap();
 
         return Ok(TransferFeeIncludedAmount {
             amount: transfer_fee_included_amount,

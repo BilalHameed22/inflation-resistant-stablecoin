@@ -1,4 +1,5 @@
 use crate::*;
+use crate::dlmm::accounts::BinArrayBitmapExtension;
 use ruint::aliases::U512;
 
 pub trait BinArrayBitmapExtExtension {

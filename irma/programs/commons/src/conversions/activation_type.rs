@@ -1,4 +1,5 @@
 use crate::*;
+use crate::dlmm::types::ActivationType;
 
 impl TryFrom<u8> for ActivationType {
     type Error = anyhow::Error;

@@ -5,6 +5,17 @@ use ruint::aliases::U1024;
 use std::ops::Deref;
 use std::ops::Shl;
 use std::ops::Shr;
+use crate::BASIS_POINT_MAX;
+use crate::BIN_ARRAY_BITMAP_SIZE;
+use crate::ensure;
+use crate::FEE_PRECISION;
+use crate::dlmm::accounts::*;
+use crate::dlmm::types::*;
+use crate::MAX_FEE_RATE;
+use crate::MAX_BIN_ID;
+use crate::MIN_BIN_ID;
+use crate::TokenProgramFlagWrapper;
+use crate::CustomError;
 
 pub trait LbPairExtension {
     fn bitmap_range() -> (i32, i32);
@@ -64,7 +75,7 @@ impl LbPairExtension for LbPair {
     }
 
     fn activation_type(&self) -> Result<ActivationType> {
-        Ok(self.activation_type.try_into()?)
+        self.activation_type.into()?
     }
 
     fn update_references(&mut self, current_timestamp: i64) -> Result<()> {
@@ -204,9 +215,9 @@ impl LbPairExtension for LbPair {
         }
         .ok_or("overflow").unwrap();
 
-        ensure!(
+        require!(
             next_active_bin_id >= MIN_BIN_ID && next_active_bin_id <= MAX_BIN_ID,
-            "Insufficient liquidity"
+            CustomError::ActiveBinOutOfBounds
         );
 
         self.active_id = next_active_bin_id;
@@ -266,7 +277,7 @@ impl LbPairExtension for LbPair {
                 .checked_sub(min_bitmap_id)
                 .ok_or("overflow").unwrap()
                 .try_into()
-                .ok_or("overflow").unwrap();
+                .unwrap();
             let offset_bit_map =
                 bin_array_bitmap.shl(bitmap_range.checked_sub(array_offset).ok_or("overflow").unwrap());
 

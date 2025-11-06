@@ -1,5 +1,7 @@
 use crate::pda::*;
-use crate::bin_array::*;
+use crate::dlmm::accounts::*;
+use crate::dlmm::types::*;
+use crate::extensions::bin_array::BinArrayExtension;
 use anchor_lang::prelude::*;
 
 pub trait PositionExtension {
@@ -38,7 +40,9 @@ impl PositionExtension for PositionV2 {
         lower_bin_id: i32,
         upper_bin_id: i32,
     ) -> Result<(i32, i32)> {
-        require!(lower_bin_id >= self.lower_bin_id && upper_bin_id <= self.upper_bin_id);
+        require!(lower_bin_id >= self.lower_bin_id && upper_bin_id <= self.upper_bin_id,
+            Error::msg("Requested bin id range is out of position's range")
+        );
         let lower_bin_array_index = BinArray::bin_id_to_bin_array_index(lower_bin_id)?;
         let upper_bin_array_index = lower_bin_array_index + 1;
         Ok((lower_bin_array_index, upper_bin_array_index))

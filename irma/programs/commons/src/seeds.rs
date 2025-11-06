@@ -1,5 +1,4 @@
-use anchor_lang::prelude::pubkey;
-use anchor_lang::prelude::pubkey::Pubkey;
+use anchor_lang::prelude::*;
 
 pub const BIN_ARRAY: &[u8] = b"bin_array";
 

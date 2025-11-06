@@ -1,5 +1,18 @@
-use crate::bin_array::*;
+use crate::calculate_transfer_fee_excluded_amount;
+use crate::calculate_transfer_fee_included_amount;
+use crate::derive_bin_array_pda;
+// use crate::ensure;
+use crate::extensions::bin::BinExtension;
+use crate::extensions::bin_array::BinArrayExtension;
+use crate::extensions::bin_array_bitmap::BinArrayBitmapExtExtension;
+use crate::dlmm::accounts::*;
+use crate::dlmm::types::*;
+use crate::extensions::lb_pair::LbPairExtension;
+use crate::SwapResult;
+
 use anchor_lang::prelude::*;
+use anchor_lang::require;
+use anchor_lang::error::Error;
 // use anyhow::*;
 use std::collections::HashMap;
 
@@ -20,9 +33,9 @@ fn validate_swap_activation(
     current_timestamp: u64,
     current_slot: u64,
 ) -> Result<()> {
-    ensure!(
+    require!(
         lb_pair.status()?.eq(&PairStatus::Enabled),
-        "Pair is disabled"
+        Error::msg("Pair is disabled")
     );
 
     let pair_type = lb_pair.pair_type()?;
@@ -33,9 +46,9 @@ fn validate_swap_activation(
             ActivationType::Timestamp => current_timestamp,
         };
 
-        ensure!(
+        require!(
             current_point >= lb_pair.activation_point,
-            "Pair is disabled"
+            Error::msg("Pair is disabled")
         );
     }
 
