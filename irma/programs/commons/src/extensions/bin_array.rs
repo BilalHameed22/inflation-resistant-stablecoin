@@ -1,13 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_lang::error::Error;
 use num_integer::Integer;
-use crate::bin_array::ErrorCode;
+// use crate::bin_array::ErrorCode;
+use anchor_lang::prelude::ErrorCode;
 use crate::derive_bin_array_pda;
 use crate::dlmm::types::*;
 use crate::dlmm::accounts::*;
 use crate::ensure;
 use crate::MAX_BIN_PER_ARRAY;
-use crate::CustomError::BinIdOutOfBound;
+use crate::CustomError;
 
 pub trait BinArrayExtension {
     fn is_bin_id_within_range(&self, bin_id: i32) -> Result<bool>;
@@ -60,9 +61,9 @@ impl BinArrayExtension for BinArray {
     }
 
     fn get_bin_index_in_array(&self, bin_id: i32) -> Result<usize> {
-        require!(self.is_bin_id_within_range(bin_id)?, BinIdOutOfBound);
+        require!(self.is_bin_id_within_range(bin_id)?, CustomError::BinIdOutOfBound);
         let (lower_bin_id, _) = BinArray::get_bin_array_lower_upper_bin_id(self.index as i32)?;
-        let index = bin_id.checked_sub(lower_bin_id).ok_or(BinIdOutOfBound)?;
+        let index = bin_id.checked_sub(lower_bin_id).ok_or(CustomError::BinIdOutOfBound)?;
         Ok(index as usize)
     }
 

@@ -1,6 +1,8 @@
 use crate::*;
 use crate::dlmm::types::TokenProgramFlags;
 use std::ops::Deref;
+use std::result::Result;
+use std::result::Result::Ok;
 
 pub struct TokenProgramFlagWrapper(TokenProgramFlags);
 
@@ -19,10 +21,7 @@ impl TryFrom<u8> for TokenProgramFlagWrapper {
         match value {
             0 => Ok(TokenProgramFlagWrapper(TokenProgramFlags::TokenProgram)),
             1 => Ok(TokenProgramFlagWrapper(TokenProgramFlags::TokenProgram2022)),
-            _ => Err(anyhow::anyhow!(
-                "Invalid TokenProgramFlags value: {}",
-                value
-            )),
+            _ => Err(Error::msg("Invalid TokenProgramFlags value"))?,
         }
     }
 }

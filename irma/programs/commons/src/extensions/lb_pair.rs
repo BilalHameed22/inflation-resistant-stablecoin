@@ -46,7 +46,7 @@ pub trait LbPairExtension {
 
 impl LbPairExtension for LbPair {
     fn status(&self) -> Result<PairStatus> {
-        Ok(self.status.try_into()?)
+        Ok(self.status.try_into().unwrap())
     }
 
     fn get_token_programs(&self) -> Result<[Pubkey; 2]> {
@@ -59,7 +59,8 @@ impl LbPairExtension for LbPair {
         .into_iter()
         .enumerate()
         {
-            let flag: TokenProgramFlagWrapper = token_program_flag.try_into()?;
+            let flag: TokenProgramFlagWrapper = 
+                TokenProgramFlagWrapper::try_from(token_program_flag).unwrap();
             let token_program_id = match flag.deref() {
                 TokenProgramFlags::TokenProgram => spl_token::ID,
                 TokenProgramFlags::TokenProgram2022 => spl_token_2022::ID,
@@ -71,11 +72,11 @@ impl LbPairExtension for LbPair {
     }
 
     fn pair_type(&self) -> Result<PairType> {
-        Ok(self.pair_type.try_into()?)
+        Ok(self.pair_type.try_into().unwrap())
     }
 
     fn activation_type(&self) -> Result<ActivationType> {
-        self.activation_type.into()?
+        Ok(self.activation_type.try_into().unwrap())
     }
 
     fn update_references(&mut self, current_timestamp: i64) -> Result<()> {

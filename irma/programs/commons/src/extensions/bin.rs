@@ -8,6 +8,7 @@ use crate::safe_mul_div_cast;
 use crate::safe_mul_shr_cast;
 use crate::safe_shl_div_cast;
 use crate::u64x64_math::*;
+use crate::extensions::lb_pair::LbPairExtension;
 
 #[derive(Debug)]
 pub struct SwapResult {

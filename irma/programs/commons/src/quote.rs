@@ -9,8 +9,10 @@ use crate::dlmm::accounts::*;
 use crate::dlmm::types::*;
 use crate::extensions::lb_pair::LbPairExtension;
 use crate::SwapResult;
+use crate::CustomError;
 
 use anchor_lang::prelude::*;
+use anchor_lang::prelude::ErrorCode;
 use anchor_lang::require;
 use anchor_lang::error::Error;
 // use anyhow::*;
@@ -35,7 +37,7 @@ fn validate_swap_activation(
 ) -> Result<()> {
     require!(
         lb_pair.status()?.eq(&PairStatus::Enabled),
-        Error::msg("Pair is disabled")
+        CustomError::PairDisabled
     );
 
     let pair_type = lb_pair.pair_type()?;
@@ -48,7 +50,7 @@ fn validate_swap_activation(
 
         require!(
             current_point >= lb_pair.activation_point,
-            Error::msg("Pair is disabled")
+            CustomError::PairDisabled
         );
     }
 

@@ -84,6 +84,10 @@ pub enum CustomError {
     ActiveBinOutOfBounds,
     #[msg("Bin ID is out of bounds.")]
     BinIdOutOfBound,
+    #[msg("Pair is disabled.")]
+    PairDisabled,
+    #[msg("Requested bin id range is out of position's range")]
+    RequestedBinIdRangeOutOfBounds,
     #[msg("Invalid amount provided.")]
     InvalidAmount,
     #[msg("Pair has insufficient liquidity.")]

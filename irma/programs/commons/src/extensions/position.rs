@@ -3,6 +3,8 @@ use crate::dlmm::accounts::*;
 use crate::dlmm::types::*;
 use crate::extensions::bin_array::BinArrayExtension;
 use anchor_lang::prelude::*;
+use anchor_lang::prelude::ErrorCode;
+use crate::constants::CustomError;
 
 pub trait PositionExtension {
     fn get_bin_array_indexes_bound(&self) -> Result<(i32, i32)>;
@@ -41,7 +43,7 @@ impl PositionExtension for PositionV2 {
         upper_bin_id: i32,
     ) -> Result<(i32, i32)> {
         require!(lower_bin_id >= self.lower_bin_id && upper_bin_id <= self.upper_bin_id,
-            Error::msg("Requested bin id range is out of position's range")
+            CustomError::RequestedBinIdRangeOutOfBounds
         );
         let lower_bin_array_index = BinArray::bin_id_to_bin_array_index(lower_bin_id)?;
         let upper_bin_array_index = lower_bin_array_index + 1;
