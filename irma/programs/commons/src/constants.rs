@@ -1,5 +1,4 @@
 use anchor_lang::error_code;
-use anchor_lang::prelude::*;
 
 pub const BASIS_POINT_MAX: i32 = 10000;
 

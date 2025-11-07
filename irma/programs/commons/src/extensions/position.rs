@@ -1,9 +1,7 @@
 use crate::pda::*;
 use crate::dlmm::accounts::*;
-use crate::dlmm::types::*;
 use crate::extensions::bin_array::BinArrayExtension;
 use anchor_lang::prelude::*;
-use anchor_lang::prelude::ErrorCode;
 use crate::constants::CustomError;
 
 pub trait PositionExtension {

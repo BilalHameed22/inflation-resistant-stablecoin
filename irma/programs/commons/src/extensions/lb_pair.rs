@@ -7,7 +7,6 @@ use std::ops::Shl;
 use std::ops::Shr;
 use crate::BASIS_POINT_MAX;
 use crate::BIN_ARRAY_BITMAP_SIZE;
-use crate::ensure;
 use crate::FEE_PRECISION;
 use crate::dlmm::accounts::*;
 use crate::dlmm::types::*;

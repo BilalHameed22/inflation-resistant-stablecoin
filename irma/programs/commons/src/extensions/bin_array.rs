@@ -1,12 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_lang::error::Error;
 use num_integer::Integer;
-// use crate::bin_array::ErrorCode;
-use anchor_lang::prelude::ErrorCode;
 use crate::derive_bin_array_pda;
 use crate::dlmm::types::*;
 use crate::dlmm::accounts::*;
-use crate::ensure;
 use crate::MAX_BIN_PER_ARRAY;
 use crate::CustomError;
 
