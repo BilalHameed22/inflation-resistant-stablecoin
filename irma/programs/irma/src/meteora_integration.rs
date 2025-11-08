@@ -366,6 +366,7 @@ impl Core {
                     simulate_transaction(&instructions, /* &rpc_client, */ &[], payer.pubkey())?;
                 println!("{:?}", response);
             } else {
+                // TODO: instead of send_tx, this should be a CPI call.
                 let signature = send_tx(&instructions, /* &rpc_client, */ &[], &payer)?;
                 msg!("Close position {position} {signature}");
             }
@@ -509,6 +510,7 @@ impl Core {
             return Ok(None);
         }
 
+        // TODO: instead of send_tx, this should be a CPI call.
         let signature = send_tx(&instructions, /* &rpc_client, */ &[], &payer)?;
         msg!("Swap {amount_in} {swap_for_y} {signature}");
 
@@ -703,6 +705,7 @@ impl Core {
 
             msg!("Deposit {amount_x} {amount_y} {position} {:?}", simulate_tx);
         } else {
+            // TODO: instead of send_tx, this should be a CPI call.
             let signature = send_tx(&instructions, /* &rpc_client, */ &[&position_kp], &payer)?;
             msg!("deposit {amount_x} {amount_y} {position} {signature}");
         }

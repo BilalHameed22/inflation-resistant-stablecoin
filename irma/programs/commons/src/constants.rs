@@ -87,6 +87,8 @@ pub enum CustomError {
     PairDisabled,
     #[msg("Requested bin id range is out of position's range")]
     RequestedBinIdRangeOutOfBounds,
+    #[msg("Mint account does not match mint pubkey")]
+    MintAccountMismatch,
     #[msg("Invalid amount provided.")]
     InvalidAmount,
     #[msg("Pair has insufficient liquidity.")]

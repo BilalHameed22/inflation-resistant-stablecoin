@@ -1,17 +1,18 @@
 use std::result::Result::Ok; // disambiguate with std::result::Result::Ok
+use std::ops::Deref;
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022::extension::transfer_hook;
 use anchor_spl::token_2022::spl_token_2022::*;
 use anchor_spl::{
     token::spl_token,
-    // token::accessor::mint,
     token_2022::spl_token_2022::extension::*};
+// use anchor_lang::system_program;
 use spl_transfer_hook_interface::onchain::add_extra_accounts_for_execute_cpi; // add_extra_account_metas_for_execute;
 use crate::token_2022::transfer_fee::TransferFee;
 use crate::token_2022::transfer_fee::MAX_FEE_BASIS_POINTS;
-// use crate::token_2022::accessor::mint;
 use crate::dlmm::types::*;
 use crate::dlmm::accounts::*;
+// use crate::constants::CustomError;
 
 const ONE_IN_BASIS_POINTS: u128 = MAX_FEE_BASIS_POINTS as u128;
 
@@ -42,22 +43,23 @@ pub fn get_potential_token_2022_related_ix_data_and_accounts(
 
     let mut slices = vec![];
     let mut accounts = vec![];
+    let mut no_mint_accounts = vec![];
 
     for (mint, accounts_type) in potential_token_2022_mints {
         // Find the corresponding AccountInfo for this mint
-        if let Some(mint_account) = remaining_accounts.iter().find(|acc| acc.key() == mint) {
-            let extra_account_metas =
-                get_extra_account_metas_for_transfer_hook(mint_account.clone());
+        let mint_account = remaining_accounts.iter().find(|acc| acc.key() == mint).unwrap();
+        remaining_accounts.iter().for_each(|acc| if acc.key() != mint { no_mint_accounts.push(acc.clone()); });
+        let extra_account_metas =
+            get_extra_account_metas_for_transfer_hook(mint, mint_account.deref().clone(), &no_mint_accounts);
 
-            if !extra_account_metas.is_empty() {
-                slices.push(RemainingAccountsSlice {
-                    accounts_type,
-                    length: extra_account_metas.len() as u8,
-                });
+        if !extra_account_metas.is_empty() {
+            slices.push(RemainingAccountsSlice {
+                accounts_type,
+                length: extra_account_metas.len() as u8,
+            });
 
-                accounts.extend(extra_account_metas);
-            }
-        }
+            accounts.extend(extra_account_metas);
+        }       
     }
 
     if !slices.is_empty() {
@@ -67,16 +69,21 @@ pub fn get_potential_token_2022_related_ix_data_and_accounts(
     }
 }
 
-pub fn get_extra_account_metas_for_transfer_hook(
-    mint_account: AccountInfo<'_>,
+pub fn get_extra_account_metas_for_transfer_hook<'a>(
+    mint: Pubkey,
+    mint_account: AccountInfo<'a>,
+    remaining_accounts: &[AccountInfo<'a>],
 ) -> Vec<AccountMeta> {
     if mint_account.owner.eq(&spl_token::ID) {
         return vec![];
     }
+    // require!(mint != *mint_account.key, CustomError::MintAccountMismatch);
+
+    let mint_data = &mint_account.data.borrow(); // .as_ref();
 
     let mint_state =
         StateWithExtensions::<anchor_spl::token_2022::spl_token_2022::state::Mint>::unpack(
-            &mint_account.data.borrow(),
+            mint_data,
         ).ok().unwrap();
 
     if let Some(transfer_hook_program_id) = transfer_hook::get_program_id(&mint_state) {
@@ -94,14 +101,14 @@ pub fn get_extra_account_metas_for_transfer_hook(
 
         add_extra_accounts_for_execute_cpi(
             &mut transfer_ix,
-            &mut vec![mint_account],
-            &Pubkey::default(),
-            &mint,
-            AccountInfo::<'_>::new(),
-            AccountInfo::<'_>::new(),
-            AccountInfo::<'_>::new(),
+            &mut vec![mint_account.clone()],
+            &transfer_hook_program_id,
+            mint_account.clone(),
+            remaining_accounts[0].clone(),
+            remaining_accounts[1].clone(),
+            remaining_accounts[2].clone(),
             0,
-            &[mint_account],
+            &[mint_account.clone()],
         );
         // .map_err(|e: anyhow::Error| anyhow!(e))?;
 
