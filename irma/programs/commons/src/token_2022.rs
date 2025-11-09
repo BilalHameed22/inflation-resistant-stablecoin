@@ -1,5 +1,4 @@
 use std::result::Result::Ok; // disambiguate with std::result::Result::Ok
-use std::ops::Deref;
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022::extension::transfer_hook;
 use anchor_spl::token_2022::spl_token_2022::*;
@@ -50,7 +49,7 @@ pub fn get_potential_token_2022_related_ix_data_and_accounts(
         let mint_account = remaining_accounts.iter().find(|acc| acc.key() == mint).unwrap();
         remaining_accounts.iter().for_each(|acc| if acc.key() != mint { no_mint_accounts.push(acc.clone()); });
         let extra_account_metas =
-            get_extra_account_metas_for_transfer_hook(mint, mint_account.deref().clone(), &no_mint_accounts);
+            get_extra_account_metas_for_transfer_hook(mint, mint_account.clone(), &no_mint_accounts);
 
         if !extra_account_metas.is_empty() {
             slices.push(RemainingAccountsSlice {
@@ -99,7 +98,7 @@ pub fn get_extra_account_metas_for_transfer_hook<'a>(
                 mint_state.base.decimals,
             ).unwrap();
 
-        add_extra_accounts_for_execute_cpi(
+        let _ =add_extra_accounts_for_execute_cpi(
             &mut transfer_ix,
             &mut vec![mint_account.clone()],
             &transfer_hook_program_id,
