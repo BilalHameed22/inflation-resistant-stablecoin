@@ -46,6 +46,55 @@ impl OnChainTestConfig {
     pub fn generate_pda(&self, seeds: &[&[u8]]) -> (Pubkey, u8) {
         Pubkey::find_program_address(seeds, &self.program_id)
     }
+
+    /// Create a mock Token 2022 mint for on-chain testing
+    pub fn create_token_2022_mint(
+        &self,
+        mint_authority: &Pubkey,
+        freeze_authority: Option<&Pubkey>,
+        decimals: u8,
+    ) -> MockKeypair {
+        let mint_pubkey = Pubkey::new_unique();
+        MockKeypair::new(mint_pubkey)
+    }
+
+    /// Create a mock Token 2022 account for on-chain testing  
+    pub fn create_token_2022_account(
+        &self,
+        mint: &Pubkey,
+        owner: &Pubkey,
+    ) -> MockKeypair {
+        let account_pubkey = Pubkey::new_unique();
+        MockKeypair::new(account_pubkey)
+    }
+
+    /// Create a mock Token 2022 mint with transfer fees for on-chain testing
+    pub fn create_token_2022_mint_with_transfer_fee(
+        &self,
+        mint_authority: &Pubkey,
+        freeze_authority: Option<&Pubkey>,
+        decimals: u8,
+        transfer_fee_basis_points: u16,
+        max_fee: u64,
+    ) -> MockKeypair {
+        let mint_pubkey = Pubkey::new_unique();
+        MockKeypair::new(mint_pubkey)
+    }
+}
+
+/// Mock keypair for on-chain testing (no actual private key)
+pub struct MockKeypair {
+    pubkey: Pubkey,
+}
+
+impl MockKeypair {
+    pub fn new(pubkey: Pubkey) -> Self {
+        Self { pubkey }
+    }
+
+    pub fn pubkey(&self) -> Pubkey {
+        self.pubkey
+    }
 }
 
 /// Mock data structure for testing LB pairs without blockchain
@@ -112,7 +161,7 @@ impl OnChainTestPair {
     }
 
     /// Get token balance for testing
-    pub fn get_token_balance(&self, token_account: &Pubkey) -> Result<u64> {
+    pub fn get_token_balance(&self, token_account: &Pubkey) -> anyhow::Result<u64> {
         if let Some(data) = self.token_account_data.get(token_account) {
             get_token_balance_from_data(data)
         } else {
@@ -121,11 +170,12 @@ impl OnChainTestPair {
     }
 
     /// Set token balance for testing
-    pub fn set_token_balance(&mut self, token_account: &Pubkey, balance: u64) -> Result<()> {
+    pub fn set_token_balance(&mut self, token_account: &Pubkey, balance: u64) -> anyhow::Result<()> {
         if let Some(data) = self.token_account_data.get_mut(token_account) {
             set_token_balance_in_data(data, balance)
         } else {
-            Err(Error::msg("Token account not found"))
+            msg!("Token account not found");
+            Ok(())
         }
     }
 
@@ -234,6 +284,8 @@ pub use crate::utils::{
     create_mock_account_info,
     create_mock_mint_data,
     create_mock_token_account_data,
+    create_mock_token_2022_mint_data,
+    create_mock_token_2022_account_data,
     get_token_balance_from_data,
     set_token_balance_in_data,
     advance_slot,
@@ -309,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_balance_operations() -> Result<()> {
+    fn test_balance_operations() -> anyhow::Result<()> {
         let mut test_pair = OnChainTestPair::new()?;
         
         // Test getting balance

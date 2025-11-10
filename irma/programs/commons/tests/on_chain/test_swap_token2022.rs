@@ -1,4 +1,3 @@
-// use super::mod::*;
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::*;
 use commons::quote::*;
@@ -6,7 +5,7 @@ use commons::dlmm::accounts::*;
 use commons::dlmm::types::*;
 use commons::token_2022::*;
 use std::collections::HashMap;
-use crate::OnChainTestPair;
+use crate::{OnChainTestPair, create_mock_clock, create_mock_account_info, create_mock_mint_data, create_mock_token_2022_mint_data, create_mock_token_2022_account_data};
 
 #[tokio::test]
 async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
@@ -155,12 +154,12 @@ async fn test_token2022_transfer_fee_calculation() -> Result<()> {
         6, // decimals
         500, // 5% transfer fee (in basis points)
         1000000, // Max fee of 1 token
-    ).await?;
+    );
 
     let token_account = test_pair.config.create_token_2022_account(
         &mint_with_fees.pubkey(),
         &test_pair.config.program_id,
-    ).await?;
+    );
 
     // Test transfer fee calculations
     let amount = 1000000; // 1 token

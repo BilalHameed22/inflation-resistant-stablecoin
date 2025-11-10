@@ -1174,6 +1174,7 @@ dependencies = [
  "anchor-client",
  "anchor-lang",
  "anchor-spl",
+ "anyhow",
  "bincode",
  "commons",
  "spl-associated-token-account 6.0.0",

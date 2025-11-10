@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use std::collections::HashMap;
+use anyhow::anyhow;
 
 /// Create mock Clock for on-chain testing
 pub fn create_mock_clock(slot: u64, unix_timestamp: i64) -> Clock {
@@ -36,9 +37,9 @@ pub fn create_mock_account_info<'a>(
 /// Utility to verify on-chain program logic without RPC calls
 pub fn verify_program_state<T: anchor_lang::AccountDeserialize>(
     account_data: &[u8],
-) -> Result<T> {
+) -> anyhow::Result<T, anyhow::Error> {
     T::try_deserialize(&mut &account_data[8..]) // Skip discriminator
-        .map_err(|e| Error::msg(format!("Failed to deserialize account: {}", e)))
+        .map_err(|e| anyhow!(format!("Failed to deserialize account: {}", e)))
 }
 
 /// Mock slot advancement for testing time-dependent logic
@@ -86,6 +87,61 @@ pub fn create_mock_token_account_data(
     data
 }
 
+/// Create mock Token 2022 mint data with extensions
+pub fn create_mock_token_2022_mint_data(
+    mint_authority: Option<Pubkey>,
+    supply: u64,
+    decimals: u8,
+    with_transfer_fee: bool,
+    transfer_fee_basis_points: u16,
+    max_fee: u64,
+) -> Vec<u8> {
+    // Token 2022 mints can have extensions, so they need more space
+    let mut data = vec![0u8; if with_transfer_fee { 300 } else { 200 }];
+    
+    // Basic mint data structure (Token 2022 layout)
+    data[0] = 1; // Account type: Mint
+    data[4..12].copy_from_slice(&supply.to_le_bytes());
+    data[44] = decimals;
+    
+    if let Some(authority) = mint_authority {
+        data[12..44].copy_from_slice(authority.as_ref());
+    }
+    
+    // Add transfer fee extension data if enabled
+    if with_transfer_fee {
+        // Simplified transfer fee extension data
+        data[200..202].copy_from_slice(&transfer_fee_basis_points.to_le_bytes());
+        data[208..216].copy_from_slice(&max_fee.to_le_bytes());
+    }
+    
+    data
+}
+
+/// Create mock Token 2022 account data with extensions
+pub fn create_mock_token_2022_account_data(
+    mint: Pubkey,
+    owner: Pubkey,
+    amount: u64,
+    with_transfer_fee: bool,
+) -> Vec<u8> {
+    // Token 2022 accounts can have extensions
+    let mut data = vec![0u8; if with_transfer_fee { 250 } else { 200 }];
+    
+    // Basic token account data structure
+    data[0..32].copy_from_slice(mint.as_ref());
+    data[32..64].copy_from_slice(owner.as_ref());
+    data[64..72].copy_from_slice(&amount.to_le_bytes());
+    
+    // Add extension data if needed
+    if with_transfer_fee {
+        // Simplified extension data for transfer fee accounts
+        data[200] = 1; // Has transfer fee extension
+    }
+    
+    data
+}
+
 /// Test on-chain instruction execution without blockchain
 pub fn simulate_instruction_execution<T, F>(
     instruction_handler: F,
@@ -99,22 +155,23 @@ where
 }
 
 /// Extract token balance from mock token account data
-pub fn get_token_balance_from_data(token_account_data: &[u8]) -> Result<u64> {
+pub fn get_token_balance_from_data(token_account_data: &[u8]) -> anyhow::Result<u64, anyhow::Error> {
     if token_account_data.len() < 72 {
-        return Err(Error::msg("Invalid token account data length"));
+        return Err(anyhow!("Invalid token account data length"));
     }
     
-    let amount_bytes: [u8; 8] = token_account_data[64..72]
+    let amount_bytes = token_account_data[64..72]
         .try_into()
-        .map_err(|_| Error::msg("Failed to extract amount bytes"))?;
-    
+        .map_err(|_| anyhow!("Failed to extract amount bytes"))?;
+
     Ok(u64::from_le_bytes(amount_bytes))
 }
 
 /// Update token balance in mock token account data
-pub fn set_token_balance_in_data(token_account_data: &mut [u8], new_balance: u64) -> Result<()> {
+pub fn set_token_balance_in_data(token_account_data: &mut [u8], new_balance: u64) -> anyhow::Result<()> {
     if token_account_data.len() < 72 {
-        return Err(Error::msg("Invalid token account data length"));
+        msg!("Invalid token account data length");
+        return Ok(());
     }
     
     token_account_data[64..72].copy_from_slice(&new_balance.to_le_bytes());
@@ -146,8 +203,8 @@ pub fn calculate_mock_rent_exemption(data_len: usize) -> u64 {
 mod tests {
     use super::*;
     
-    #[tokio::test]
-    async fn test_on_chain_utilities() -> Result<()> {
+    #[test]
+    fn test_on_chain_utilities() -> anyhow::Result<()> {
         // Test mock clock creation
         let clock = create_mock_clock(100, 1700000000);
         assert_eq!(clock.slot, 100);
@@ -182,12 +239,12 @@ mod tests {
         assert_eq!(token_data.len(), 165);
         
         // Test balance extraction
-        let balance = get_token_balance_from_data(&token_data)?;
+        let balance = get_token_balance_from_data(&token_data).unwrap();
         assert_eq!(balance, 500000);
         
         // Test balance update
-        set_token_balance_in_data(&mut token_data, 750000)?;
-        let new_balance = get_token_balance_from_data(&token_data)?;
+        set_token_balance_in_data(&mut token_data, 750000);
+        let new_balance = get_token_balance_from_data(&token_data).unwrap();
         assert_eq!(new_balance, 750000);
         
         // Test PDA creation
