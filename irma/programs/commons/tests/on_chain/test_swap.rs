@@ -1,4 +1,4 @@
-use super::mod::*;
+use super::utils::*;
 use anchor_lang::prelude::*;
 use commons::quote::*;
 use commons::dlmm::accounts::*;
@@ -7,73 +7,59 @@ use std::collections::HashMap;
 
 #[tokio::test]
 async fn test_swap_exact_out_on_chain() -> Result<()> {
-    let test_pair = OnChainTestPair::new().await?;
-    
-    println!("Setting up on-chain swap test...");
-    println!("Token X Mint: {}", test_pair.token_x_mint.pubkey());
-    println!("Token Y Mint: {}", test_pair.token_y_mint.pubkey());
-    println!("LB Pair: {}", test_pair.lb_pair);
+    println!("Testing on-chain swap exact out logic...");
 
-    // Create mock LB pair data for testing
+    // Create mock data for on-chain testing (no blockchain required)
+    let token_x_mint = Pubkey::new_unique();
+    let token_y_mint = Pubkey::new_unique();
+    let lb_pair_key = Pubkey::new_unique();
+    let reserve_x = Pubkey::new_unique();
+    let reserve_y = Pubkey::new_unique();
+
+    // Create mock LB pair data for testing on-chain logic
     let lb_pair_data = create_mock_lb_pair(
-        test_pair.token_x_mint.pubkey(),
-        test_pair.token_y_mint.pubkey(),
-        test_pair.reserve_x,
-        test_pair.reserve_y,
+        token_x_mint,
+        token_y_mint,
+        reserve_x,
+        reserve_y,
     );
 
-    // Create mock bin arrays
+    // Create mock bin arrays for on-chain testing
     let bin_arrays = create_mock_bin_arrays();
 
     // Test parameters
     let amount_out = 1000000; // 1 token (6 decimals)
     let swap_for_y = true;
 
-    // Create mock account info for the mints
-    let mint_x_key = test_pair.token_x_mint.pubkey();
-    let mint_y_key = test_pair.token_y_mint.pubkey();
-    
-    // Create minimal AccountInfo for testing
-    let mint_x_lamports = &mut 0u64;
-    let mint_x_data = &mut vec![0u8; 82]; // Standard mint size
-    let mint_x_owner = spl_token::ID;
-    let mint_x_account = AccountInfo::new(
-        &mint_x_key,
+    // Create mock AccountInfo using our utility functions
+    let mut mint_x_lamports = 0u64;
+    let mut mint_x_data = create_mock_mint_data(Some(Pubkey::new_unique()), 1000000000, 6, false);
+    let mint_x_account = create_mock_account_info(
+        &token_x_mint,
         false,
         false,
-        mint_x_lamports,
-        mint_x_data,
-        &mint_x_owner,
-        false,
-        0,
+        &mut mint_x_lamports,
+        &mut mint_x_data,
+        &spl_token::ID,
     );
 
-    let mint_y_lamports = &mut 0u64;
-    let mint_y_data = &mut vec![0u8; 82];
-    let mint_y_owner = spl_token::ID;
-    let mint_y_account = AccountInfo::new(
-        &mint_y_key,
+    let mut mint_y_lamports = 0u64;
+    let mut mint_y_data = create_mock_mint_data(Some(Pubkey::new_unique()), 1000000000000, 9, false);
+    let mint_y_account = create_mock_account_info(
+        &token_y_mint,
         false,
         false,
-        mint_y_lamports,
-        mint_y_data,
-        &mint_y_owner,
-        false,
-        0,
+        &mut mint_y_lamports,
+        &mut mint_y_data,
+        &spl_token::ID,
     );
 
-    // Create mock clock
-    let clock = Clock {
-        slot: 100,
-        epoch_start_timestamp: 1000000000,
-        epoch: 1,
-        leader_schedule_epoch: 1,
-        unix_timestamp: 1700000000,
-    };
+    // Create mock clock for on-chain testing
+    let clock = create_mock_clock(100, 1700000000);
 
-    // Perform the quote calculation
+    // Perform the on-chain quote calculation (pure program logic)
     let quote_result = quote_exact_out(
-        test_pair.lb_pair,
+        lb_pair_key,
         &lb_pair_data,
         amount_out,
         swap_for_y,
@@ -86,11 +72,11 @@ async fn test_swap_exact_out_on_chain() -> Result<()> {
 
     match quote_result {
         Ok(quote) => {
-            println!("Quote successful!");
+            println!("On-chain quote successful!");
             println!("Amount in: {}", quote.amount_in);
             println!("Fee: {}", quote.fee);
             
-            // Basic assertions
+            // Test on-chain logic assertions
             assert!(quote.amount_in > 0, "Amount in should be greater than 0");
             assert!(quote.fee >= 0, "Fee should be non-negative");
             
@@ -98,7 +84,7 @@ async fn test_swap_exact_out_on_chain() -> Result<()> {
             assert!(quote.amount_in < amount_out * 2, "Amount in should be reasonable");
         }
         Err(e) => {
-            println!("Quote failed: {:?}", e);
+            println!("On-chain quote failed: {:?}", e);
             return Err(e);
         }
     }
@@ -109,68 +95,58 @@ async fn test_swap_exact_out_on_chain() -> Result<()> {
 
 #[tokio::test]
 async fn test_swap_exact_in_on_chain() -> Result<()> {
-    let test_pair = OnChainTestPair::new().await?;
-    
-    println!("Setting up on-chain swap exact in test...");
+    println!("Testing on-chain swap exact in logic...");
 
-    // Create mock LB pair data
+    // Create mock data for pure on-chain testing
+    let token_x_mint = Pubkey::new_unique();
+    let token_y_mint = Pubkey::new_unique();
+    let lb_pair_key = Pubkey::new_unique();
+    let reserve_x = Pubkey::new_unique();
+    let reserve_y = Pubkey::new_unique();
+
+    // Create mock LB pair data for on-chain logic testing
     let lb_pair_data = create_mock_lb_pair(
-        test_pair.token_x_mint.pubkey(),
-        test_pair.token_y_mint.pubkey(),
-        test_pair.reserve_x,
-        test_pair.reserve_y,
+        token_x_mint,
+        token_y_mint,
+        reserve_x,
+        reserve_y,
     );
 
-    // Create mock bin arrays
+    // Create mock bin arrays for on-chain testing
     let bin_arrays = create_mock_bin_arrays();
 
     // Test parameters
     let amount_in = 1000000; // 1 token (6 decimals)
     let swap_for_y = false; // Swap X for Y
 
-    // Create minimal AccountInfo for testing
-    let mint_x_key = test_pair.token_x_mint.pubkey();
-    let mint_y_key = test_pair.token_y_mint.pubkey();
-    
-    let mint_x_lamports = &mut 0u64;
-    let mint_x_data = &mut vec![0u8; 82];
-    let mint_x_owner = spl_token::ID;
-    let mint_x_account = AccountInfo::new(
-        &mint_x_key,
+    // Create mock AccountInfo using utility functions
+    let mut mint_x_lamports = 0u64;
+    let mut mint_x_data = create_mock_mint_data(Some(Pubkey::new_unique()), 1000000000, 6, false);
+    let mint_x_account = create_mock_account_info(
+        &token_x_mint,
         false,
         false,
-        mint_x_lamports,
-        mint_x_data,
-        &mint_x_owner,
-        false,
-        0,
+        &mut mint_x_lamports,
+        &mut mint_x_data,
+        &spl_token::ID,
     );
 
-    let mint_y_lamports = &mut 0u64;
-    let mint_y_data = &mut vec![0u8; 82];
-    let mint_y_owner = spl_token::ID;
-    let mint_y_account = AccountInfo::new(
-        &mint_y_key,
+    let mut mint_y_lamports = 0u64;
+    let mut mint_y_data = create_mock_mint_data(Some(Pubkey::new_unique()), 1000000000000, 9, false);
+    let mint_y_account = create_mock_account_info(
+        &token_y_mint,
         false,
         false,
-        mint_y_lamports,
-        mint_y_data,
-        &mint_y_owner,
-        false,
-        0,
+        &mut mint_y_lamports,
+        &mut mint_y_data,
+        &spl_token::ID,
     );
 
-    let clock = Clock {
-        slot: 100,
-        epoch_start_timestamp: 1000000000,
-        epoch: 1,
-        leader_schedule_epoch: 1,
-        unix_timestamp: 1700000000,
-    };
-
-    // Perform the quote calculation
+    // Create mock clock for on-chain testing
+    let clock = create_mock_clock(100, 1700000000);
+    // Perform the on-chain quote calculation (pure program logic)
     let quote_result = quote_exact_in(
-        test_pair.lb_pair,
+        lb_pair_key,
         &lb_pair_data,
         amount_in,
         swap_for_y,
@@ -183,10 +159,11 @@ async fn test_swap_exact_in_on_chain() -> Result<()> {
 
     match quote_result {
         Ok(quote) => {
-            println!("Quote exact in successful!");
+            println!("On-chain quote exact in successful!");
             println!("Amount out: {}", quote.amount_out);
             println!("Fee: {}", quote.fee);
             
+            // Test on-chain logic assertions
             assert!(quote.amount_out > 0, "Amount out should be greater than 0");
             assert!(quote.fee >= 0, "Fee should be non-negative");
             
@@ -194,7 +171,7 @@ async fn test_swap_exact_in_on_chain() -> Result<()> {
             assert!(quote.amount_out <= amount_in, "Amount out should be less than or equal to amount in");
         }
         Err(e) => {
-            println!("Quote exact in failed: {:?}", e);
+            println!("On-chain quote exact in failed: {:?}", e);
             return Err(e);
         }
     }
@@ -209,55 +186,69 @@ fn create_mock_lb_pair(
     token_y_mint: Pubkey,
     reserve_x: Pubkey,
     reserve_y: Pubkey,
-) -> commons::dlmm::types::LbPair {
+) -> commons::dlmm::accounts::LbPair {
     use commons::dlmm::types::*;
     use commons::extensions::lb_pair::*;
     
     // Create a mock LbPair with reasonable test data
     let mut lb_pair = LbPair {
         parameters: StaticParameters {
-            base_factor: 5000,        // 0.5% base fee
-            filter_period: 30,        // 30 seconds
-            decay_period: 600,        // 10 minutes
-            reduction_factor: 5000,   // 50% reduction
-            variable_fee_control: 40000, // 4% max variable fee
-            protocol_share: 1000,     // 10% protocol share
-            max_volatility_accumulator: 350000, // 35% max volatility
+            base_factor: 5000,
+            filter_period: 30,
+            decay_period: 600,
+            reduction_factor: 5000,
+            variable_fee_control: 40000,
+            protocol_share: 1000,
+            max_volatility_accumulator: 350000,
+            min_bin_id: 0,
+            max_bin_id: 143,
+            base_fee_power_factor: 2,
+            _padding: [0; 5],
         },
         v_parameters: VariableParameters {
             volatility_accumulator: 0,
             volatility_reference: 0,
-            id_reference: 8388608, // ID 2^23 (center bin)
-            time_of_last_update: 1700000000,
+            index_reference: 8388608,
+            _padding: [0u8; 4],
+            last_update_timestamp: 1700000000,
+            _padding_1: [0; 8],
         },
-        bin_step: 25, // 0.25% bin step
-        pair_type: PairType::Base as u8,
-        active_id: 8388608, // Center bin
+        bump_seed: [0; 1],
+        require_base_factor_seed: 0u8,
+        base_factor_seed: [0u8; 2],
+        status: PairStatus::Enabled as u8,
+        bin_step: 25,
+        pair_type: PairType::PermissionlessV2 as u8,
+        active_id: 8388608,
         bin_step_seed: [0; 2],
         token_x_mint,
         token_y_mint,
         reserve_x,
         reserve_y,
-        protocol_fee: PairProtocolFee {
+        protocol_fee: ProtocolFee {
             amount_x: 0,
             amount_y: 0,
         },
-        fees: PairFees {
-            protocol_fee_percentage: 1000, // 10%
-            base_fee_percentage: 5000,     // 0.5%
-        },
-        reward_infos: [PairRewardInfo::default(); 2],
+        reward_infos: [RewardInfo::default(); 2],
         oracle: Pubkey::default(),
-        bin_array_bitmap: [0; 512],
+        bin_array_bitmap: [0; 16],
         last_updated_at: 1700000000,
-        whitelisted_wallet: Pubkey::default(),
+        // whitelisted_wallet: Pubkey::default(),
         pre_activation_swap_address: Pubkey::default(),
         base_key: Pubkey::default(),
         activation_type: ActivationType::Timestamp as u8,
-        padding: [0; 7],
+        creator_pool_on_off_control: 0u8,
+        // _padding: [0; 7],
         activation_point: 0,
         pre_activation_duration: 0,
-        padding1: [0; 64],
+        _padding_1: [0u8; 32],
+        _padding_2: [0u8; 32],
+        _padding_3: [0u8; 8],
+        _padding_4: 0u64,
+        creator: Pubkey::default(),
+        token_mint_x_program_flag: 0u8,
+        token_mint_y_program_flag: 0u8,
+        _reserved: [0u8; 22],
     };
 
     // Set status to enabled
@@ -268,8 +259,9 @@ fn create_mock_lb_pair(
 }
 
 /// Helper function to create mock bin arrays
-fn create_mock_bin_arrays() -> HashMap<Pubkey, commons::dlmm::types::BinArray> {
+fn create_mock_bin_arrays() -> HashMap<Pubkey, commons::dlmm::accounts::BinArray> {
     use commons::dlmm::types::*;
+    use commons::dlmm::accounts::*;
     
     let mut bin_arrays = HashMap::new();
     
@@ -282,6 +274,8 @@ fn create_mock_bin_arrays() -> HashMap<Pubkey, commons::dlmm::types::BinArray> {
         bins[i] = Bin {
             amount_x: 1000000000, // 1000 tokens
             amount_y: 1000000000000, // 1000 tokens (different decimals)
+            amount_x_in: 0,
+            amount_y_in: 0,
             price: 1000000, // Mock price
             liquidity_supply: 1000000000,
             reward_per_token_stored: [0; 2],
@@ -289,11 +283,19 @@ fn create_mock_bin_arrays() -> HashMap<Pubkey, commons::dlmm::types::BinArray> {
             fee_amount_y_per_token_stored: 0,
         };
     }
+
+    let lb_pair = create_mock_lb_pair(
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+    );
     
     let bin_array = BinArray {
         index: 0,
         version: 0,
-        padding: [0; 7],
+        lb_pair: lb_pair.base_key,
+        _padding: [0; 7],
         bins,
     };
     

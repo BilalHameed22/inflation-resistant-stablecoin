@@ -1,4 +1,4 @@
-use super::mod::*;
+// use super::mod::*;
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::*;
 use commons::quote::*;
@@ -6,36 +6,37 @@ use commons::dlmm::accounts::*;
 use commons::dlmm::types::*;
 use commons::token_2022::*;
 use std::collections::HashMap;
+use crate::OnChainTestPair;
 
 #[tokio::test]
 async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
-    let mut test_pair = OnChainTestPair::new().await?;
+    let mut test_pair = OnChainTestPair::new().unwrap();
     
     println!("Setting up Token 2022 on-chain swap test...");
     
     // Create Token 2022 mints instead of regular SPL tokens
     let token_2022_mint_x = test_pair.config.create_token_2022_mint(
-        &test_pair.config.payer.pubkey(),
+        &test_pair.config.program_id,
         None,
         6, // decimals
-    ).await?;
+    );
     
     let token_2022_mint_y = test_pair.config.create_token_2022_mint(
-        &test_pair.config.payer.pubkey(),
+        &test_pair.config.program_id,
         None,
         9, // decimals
-    ).await?;
+    );
 
     // Create Token 2022 accounts
     let user_token_2022_x = test_pair.config.create_token_2022_account(
         &token_2022_mint_x.pubkey(),
-        &test_pair.config.payer.pubkey(),
-    ).await?;
+        &test_pair.config.program_id,
+    );
     
     let user_token_2022_y = test_pair.config.create_token_2022_account(
         &token_2022_mint_y.pubkey(),
-        &test_pair.config.payer.pubkey(),
-    ).await?;
+        &test_pair.config.program_id,
+    );
 
     println!("Token 2022 X Mint: {}", token_2022_mint_x.pubkey());
     println!("Token 2022 Y Mint: {}", token_2022_mint_y.pubkey());
@@ -100,6 +101,7 @@ async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     let transfer_hook_accounts = get_extra_account_metas_for_transfer_hook(
         token_2022_mint_x.pubkey(),
         mint_x_account.clone(),
+        &[]
     );
 
     println!("Transfer hook accounts found: {}", transfer_hook_accounts.len());
@@ -142,13 +144,13 @@ async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
 
 #[tokio::test]
 async fn test_token2022_transfer_fee_calculation() -> Result<()> {
-    let test_pair = OnChainTestPair::new().await?;
+    let test_pair = OnChainTestPair::new().unwrap();
     
     println!("Testing Token 2022 transfer fee calculations...");
 
     // Create a Token 2022 mint with transfer fees
     let mint_with_fees = test_pair.config.create_token_2022_mint_with_transfer_fee(
-        &test_pair.config.payer.pubkey(),
+        &test_pair.config.program_id,
         None,
         6, // decimals
         500, // 5% transfer fee (in basis points)
@@ -157,7 +159,7 @@ async fn test_token2022_transfer_fee_calculation() -> Result<()> {
 
     let token_account = test_pair.config.create_token_2022_account(
         &mint_with_fees.pubkey(),
-        &test_pair.config.payer.pubkey(),
+        &test_pair.config.program_id,
     ).await?;
 
     // Test transfer fee calculations
@@ -234,7 +236,7 @@ fn create_mock_lb_pair_token2022(
     token_y_mint: Pubkey,
     reserve_x: Pubkey,
     reserve_y: Pubkey,
-) -> commons::dlmm::types::LbPair {
+) -> LbPair {
     use commons::dlmm::types::*;
     
     // Create a mock LbPair with Token 2022 considerations
@@ -247,29 +249,36 @@ fn create_mock_lb_pair_token2022(
             variable_fee_control: 40000,
             protocol_share: 1000,
             max_volatility_accumulator: 350000,
+            min_bin_id: 0,
+            max_bin_id: 143,
+            base_fee_power_factor: 2,
+            _padding: [0; 5],
         },
         v_parameters: VariableParameters {
             volatility_accumulator: 0,
             volatility_reference: 0,
-            id_reference: 8388608,
-            time_of_last_update: 1700000000,
+            index_reference: 8388608,
+            _padding: [0u8; 4],
+            last_update_timestamp: 1700000000,
+            _padding_1: [0; 8],
         },
-        bump_seed: [0; 8],
-        require_base_factor_seed: false,
-        status: PairStatus::Active as u8,
+        bump_seed: [0; 1],
+        require_base_factor_seed: 0u8,
+        base_factor_seed: [0u8; 2],
+        status: PairStatus::Enabled as u8,
         bin_step: 25,
-        pair_type: PairType::Base as u8,
+        pair_type: PairType::PermissionlessV2 as u8,
         active_id: 8388608,
         bin_step_seed: [0; 2],
         token_x_mint,
         token_y_mint,
         reserve_x,
         reserve_y,
-        protocol_fee: PairProtocolFee {
+        protocol_fee: ProtocolFee {
             amount_x: 0,
             amount_y: 0,
         },
-        reward_infos: [PairRewardInfo::default(); 2],
+        reward_infos: [RewardInfo::default(); 2],
         oracle: Pubkey::default(),
         bin_array_bitmap: [0; 16],
         last_updated_at: 1700000000,
@@ -277,19 +286,25 @@ fn create_mock_lb_pair_token2022(
         pre_activation_swap_address: Pubkey::default(),
         base_key: Pubkey::default(),
         activation_type: ActivationType::Timestamp as u8,
-        creator_pool_on_off_control: false,
-        _padding: [0; 7],
+        creator_pool_on_off_control: 0u8,
+        // _padding: [0; 7],
         activation_point: 0,
         pre_activation_duration: 0,
-        _padding1: [0u8; 64],
-        _padding2: [0u8; 32],
+        _padding_1: [0u8; 32],
+        _padding_2: [0u8; 32],
+        _padding_3: [0u8; 8],
+        _padding_4: 0u64,
+        creator: Pubkey::default(),
+        token_mint_x_program_flag: 0u8,
+        token_mint_y_program_flag: 0u8,
+        _reserved: [0u8; 22],
     };
 
     lb_pair
 }
 
 /// Helper function to create mock bin arrays for Token 2022
-fn create_mock_bin_arrays_token2022() -> HashMap<Pubkey, commons::dlmm::types::BinArray> {
+fn create_mock_bin_arrays_token2022() -> HashMap<Pubkey, BinArray> {
     use commons::dlmm::types::*;
     
     let mut bin_arrays = HashMap::new();
@@ -311,10 +326,18 @@ fn create_mock_bin_arrays_token2022() -> HashMap<Pubkey, commons::dlmm::types::B
             fee_amount_y_per_token_stored: 0,
         };
     }
+
+    let lb_pair = create_mock_lb_pair_token2022(
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+    );
     
     let bin_array = BinArray {
         index: 0,
         version: 0,
+        lb_pair: lb_pair.base_key,
         _padding: [0; 7],
         bins,
     };

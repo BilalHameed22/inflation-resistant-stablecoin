@@ -1,202 +1,145 @@
 use anchor_lang::prelude::*;
-use anchor_client::solana_sdk::signature::{Keypair, Signer};
-use anchor_client::solana_sdk::transaction::Transaction;
-use anchor_client::solana_sdk::instruction::Instruction;
-use anchor_client::solana_sdk::pubkey::Pubkey;
-use anchor_client::Client;
-use anchor_spl::associated_token::get_associated_token_address_with_program_id;
-use anchor_spl::token::spl_token;
-use std::rc::Rc;
+use std::collections::HashMap;
 
-/// Process instructions and assert success for on-chain tests
-pub async fn process_and_assert_ok_on_chain(
-    instructions: &[Instruction],
-    payer: &Rc<Keypair>,
-    signers: &[&Keypair],
-    client: &Client,
-) -> Result<()> {
-    let recent_blockhash = client.rpc().get_latest_blockhash().await
-        .map_err(|e| Error::msg(format!("Failed to get blockhash: {}", e)))?;
-
-    let mut all_signers = vec![payer.as_ref()];
-    all_signers.extend_from_slice(signers);
-
-    let tx = Transaction::new_signed_with_payer(
-        instructions,
-        Some(&payer.pubkey()),
-        &all_signers,
-        recent_blockhash,
-    );
-
-    let result = client.rpc().send_and_confirm_transaction(&tx).await
-        .map_err(|e| Error::msg(format!("Transaction failed: {}", e)))?;
-
-    println!("Transaction successful: {}", result);
-    Ok(())
+/// Create mock Clock for on-chain testing
+pub fn create_mock_clock(slot: u64, unix_timestamp: i64) -> Clock {
+    Clock {
+        slot,
+        epoch_start_timestamp: unix_timestamp - 1000000,
+        epoch: slot / 432000, // Approximate epoch calculation
+        leader_schedule_epoch: slot / 432000,
+        unix_timestamp,
+    }
 }
 
-/// Get or create Associated Token Account on-chain
-pub async fn get_or_create_ata_on_chain(
-    payer: &Rc<Keypair>,
-    token_mint: &Pubkey,
-    authority: &Pubkey,
-    client: &Client,
-) -> Result<Pubkey> {
-    // Determine the token program (SPL Token vs Token 2022)
-    let mint_account = client.rpc().get_account(token_mint).await
-        .map_err(|e| Error::msg(format!("Failed to get mint account: {}", e)))?;
+/// Create mock AccountInfo for testing on-chain logic
+pub fn create_mock_account_info<'a>(
+    key: &'a Pubkey,
+    is_signer: bool,
+    is_writable: bool,
+    lamports: &'a mut u64,
+    data: &'a mut [u8],
+    owner: &'a Pubkey,
+) -> AccountInfo<'a> {
+    AccountInfo::new(
+        key,
+        is_signer,
+        is_writable,
+        lamports,
+        data,
+        owner,
+        false, // executable
+        0,     // rent_epoch
+    )
+}
+
+/// Utility to verify on-chain program logic without RPC calls
+pub fn verify_program_state<T: anchor_lang::AccountDeserialize>(
+    account_data: &[u8],
+) -> Result<T> {
+    T::try_deserialize(&mut &account_data[8..]) // Skip discriminator
+        .map_err(|e| Error::msg(format!("Failed to deserialize account: {}", e)))
+}
+
+/// Mock slot advancement for testing time-dependent logic
+pub fn advance_slot(current_clock: &mut Clock, slots: u64) {
+    current_clock.slot += slots;
+    // Approximate unix timestamp advancement (400ms per slot)
+    current_clock.unix_timestamp += (slots * 400) as i64 / 1000;
+}
+
+/// Create mock mint account data for testing
+pub fn create_mock_mint_data(
+    mint_authority: Option<Pubkey>,
+    supply: u64,
+    decimals: u8,
+    is_token_2022: bool,
+) -> Vec<u8> {
+    let mut data = vec![0u8; if is_token_2022 { 165 } else { 82 }];
     
-    let token_program_id = mint_account.owner;
+    // Basic mint data structure (simplified)
+    // In a real implementation, you'd use the actual SPL token mint layout
+    data[0] = 1; // Account type: Mint
+    data[4..12].copy_from_slice(&supply.to_le_bytes());
+    data[44] = decimals;
     
-    let ata_address = get_associated_token_address_with_program_id(
-        authority, 
-        token_mint, 
-        &token_program_id
-    );
-    
-    // Check if ATA already exists
-    let ata_account = client.rpc().get_account(&ata_address).await;
-    
-    if ata_account.is_err() || ata_account.unwrap().is_none() {
-        create_associated_token_account_on_chain(
-            payer,
-            token_mint,
-            authority,
-            &token_program_id,
-            client,
-        ).await?;
+    if let Some(authority) = mint_authority {
+        data[12..44].copy_from_slice(authority.as_ref());
     }
     
-    Ok(ata_address)
+    data
 }
 
-/// Create Associated Token Account on-chain
-pub async fn create_associated_token_account_on_chain(
-    payer: &Rc<Keypair>,
-    token_mint: &Pubkey,
-    authority: &Pubkey,
-    program_id: &Pubkey,
-    client: &Client,
-) -> Result<()> {
-    println!("Creating ATA for mint: {}, authority: {}, program: {}", 
-             token_mint, authority, program_id);
-    
-    let ins = spl_associated_token_account::instruction::create_associated_token_account(
-        &payer.pubkey(),
-        authority,
-        token_mint,
-        program_id,
-    );
-
-    process_and_assert_ok_on_chain(&[ins], payer, &[], client).await
-}
-
-/// Wrap SOL into wSOL for testing
-pub async fn wrap_sol_on_chain(
-    payer: &Rc<Keypair>,
-    wallet: &Pubkey,
+/// Create mock token account data for testing
+pub fn create_mock_token_account_data(
+    mint: Pubkey,
+    owner: Pubkey,
     amount: u64,
-    client: &Client,
-) -> Result<()> {
-    let wsol_ata = spl_associated_token_account::get_associated_token_address(
-        wallet,
-        &spl_token::native_mint::id(),
-    );
-
-    let create_wsol_ata_ix =
-        spl_associated_token_account::instruction::create_associated_token_account(
-            &payer.pubkey(),
-            &payer.pubkey(),
-            &spl_token::native_mint::id(),
-            &spl_token::id(),
-        );
-
-    let transfer_sol_ix =
-        solana_program::system_instruction::transfer(&payer.pubkey(), &wsol_ata, amount);
-
-    let sync_native_ix = spl_token::instruction::sync_native(&spl_token::id(), &wsol_ata)
-        .map_err(|e| Error::msg(format!("Failed to create sync native instruction: {}", e)))?;
-
-    process_and_assert_ok_on_chain(
-        &[create_wsol_ata_ix, transfer_sol_ix, sync_native_ix],
-        payer,
-        &[],
-        client,
-    ).await
+) -> Vec<u8> {
+    let mut data = vec![0u8; 165];
+    
+    // Basic token account data structure (simplified)
+    data[0..32].copy_from_slice(mint.as_ref());
+    data[32..64].copy_from_slice(owner.as_ref());
+    data[64..72].copy_from_slice(&amount.to_le_bytes());
+    
+    data
 }
 
-/// Get clock data from on-chain
-pub async fn get_clock_on_chain(client: &Client) -> Result<solana_program::clock::Clock> {
-    let clock_account = client.rpc().get_account(&solana_program::sysvar::clock::id()).await
-        .map_err(|e| Error::msg(format!("Failed to get clock account: {}", e)))?
-        .ok_or_else(|| Error::msg("Clock account not found"))?;
-
-    let clock_state = bincode::deserialize::<solana_program::clock::Clock>(clock_account.data.as_ref())
-        .map_err(|e| Error::msg(format!("Failed to deserialize clock: {}", e)))?;
-
-    Ok(clock_state)
+/// Test on-chain instruction execution without blockchain
+pub fn simulate_instruction_execution<T, F>(
+    instruction_handler: F,
+    accounts: &mut [AccountInfo],
+    instruction_data: &[u8],
+) -> Result<T>
+where
+    F: FnOnce(&mut [AccountInfo], &[u8]) -> Result<T>,
+{
+    instruction_handler(accounts, instruction_data)
 }
 
-/// Helper to create a transaction and get signature for tracking
-pub async fn create_and_send_transaction(
-    instructions: &[Instruction],
-    payer: &Rc<Keypair>,
-    signers: &[&Keypair],
-    client: &Client,
-) -> Result<String> {
-    let recent_blockhash = client.rpc().get_latest_blockhash().await
-        .map_err(|e| Error::msg(format!("Failed to get blockhash: {}", e)))?;
-
-    let mut all_signers = vec![payer.as_ref()];
-    all_signers.extend_from_slice(signers);
-
-    let tx = Transaction::new_signed_with_payer(
-        instructions,
-        Some(&payer.pubkey()),
-        &all_signers,
-        recent_blockhash,
-    );
-
-    let signature = client.rpc().send_and_confirm_transaction(&tx).await
-        .map_err(|e| Error::msg(format!("Transaction failed: {}", e)))?;
-
-    Ok(signature.to_string())
-}
-
-/// Get token account balance
-pub async fn get_token_balance(
-    client: &Client,
-    token_account: &Pubkey,
-) -> Result<u64> {
-    let account_info = client.rpc().get_token_account_balance(token_account).await
-        .map_err(|e| Error::msg(format!("Failed to get token balance: {}", e)))?;
-    
-    let balance = account_info.amount.parse::<u64>()
-        .map_err(|e| Error::msg(format!("Failed to parse balance: {}", e)))?;
-    
-    Ok(balance)
-}
-
-/// Wait for a specific number of slots
-pub async fn wait_for_slots(client: &Client, slots: u64) -> Result<()> {
-    let start_slot = client.rpc().get_slot().await
-        .map_err(|e| Error::msg(format!("Failed to get current slot: {}", e)))?;
-    
-    let target_slot = start_slot + slots;
-    
-    loop {
-        let current_slot = client.rpc().get_slot().await
-            .map_err(|e| Error::msg(format!("Failed to get current slot: {}", e)))?;
-        
-        if current_slot >= target_slot {
-            break;
-        }
-        
-        // Wait a bit before checking again
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+/// Extract token balance from mock token account data
+pub fn get_token_balance_from_data(token_account_data: &[u8]) -> Result<u64> {
+    if token_account_data.len() < 72 {
+        return Err(Error::msg("Invalid token account data length"));
     }
     
+    let amount_bytes: [u8; 8] = token_account_data[64..72]
+        .try_into()
+        .map_err(|_| Error::msg("Failed to extract amount bytes"))?;
+    
+    Ok(u64::from_le_bytes(amount_bytes))
+}
+
+/// Update token balance in mock token account data
+pub fn set_token_balance_in_data(token_account_data: &mut [u8], new_balance: u64) -> Result<()> {
+    if token_account_data.len() < 72 {
+        return Err(Error::msg("Invalid token account data length"));
+    }
+    
+    token_account_data[64..72].copy_from_slice(&new_balance.to_le_bytes());
     Ok(())
+}
+
+/// Create mock program-derived address for testing
+pub fn create_mock_pda(seeds: &[&[u8]], program_id: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(seeds, program_id)
+}
+
+/// Simulate time passage for time-dependent on-chain logic
+pub fn simulate_time_passage(clock: &mut Clock, seconds: i64) {
+    clock.unix_timestamp += seconds;
+    // Approximate slot advancement (400ms per slot)
+    clock.slot += (seconds * 1000 / 400) as u64;
+}
+
+/// Mock rent calculation for testing rent-exempt requirements
+pub fn calculate_mock_rent_exemption(data_len: usize) -> u64 {
+    // Simplified rent calculation for testing
+    // In reality, this would use the actual rent calculation logic
+    let base_rent = 1_000_000; // 0.001 SOL base
+    let per_byte_rent = 6960; // Approximate lamports per byte
+    base_rent + (data_len as u64 * per_byte_rent)
 }
 
 #[cfg(test)]
@@ -205,8 +148,81 @@ mod tests {
     
     #[tokio::test]
     async fn test_on_chain_utilities() -> Result<()> {
-        // Basic test to ensure utilities compile and can be called
-        println!("On-chain utilities test placeholder");
+        // Test mock clock creation
+        let clock = create_mock_clock(100, 1700000000);
+        assert_eq!(clock.slot, 100);
+        assert_eq!(clock.unix_timestamp, 1700000000);
+        
+        // Test slot advancement
+        let mut clock = create_mock_clock(100, 1700000000);
+        advance_slot(&mut clock, 10);
+        assert_eq!(clock.slot, 110);
+        
+        // Test time passage simulation
+        let mut clock = create_mock_clock(100, 1700000000);
+        simulate_time_passage(&mut clock, 60); // 1 minute
+        assert_eq!(clock.unix_timestamp, 1700000060);
+        
+        // Test mock mint data creation
+        let mint_data = create_mock_mint_data(
+            Some(Pubkey::new_unique()),
+            1000000,
+            6,
+            false,
+        );
+        assert_eq!(mint_data.len(), 82);
+        assert_eq!(mint_data[44], 6); // decimals
+        
+        // Test mock token account data creation and balance operations
+        let mut token_data = create_mock_token_account_data(
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            500000,
+        );
+        assert_eq!(token_data.len(), 165);
+        
+        // Test balance extraction
+        let balance = get_token_balance_from_data(&token_data)?;
+        assert_eq!(balance, 500000);
+        
+        // Test balance update
+        set_token_balance_in_data(&mut token_data, 750000)?;
+        let new_balance = get_token_balance_from_data(&token_data)?;
+        assert_eq!(new_balance, 750000);
+        
+        // Test PDA creation
+        let program_id = Pubkey::new_unique();
+        let (pda, bump) = create_mock_pda(&[b"test", b"seed"], &program_id);
+        assert!(bump <= 255);
+        
+        // Test rent calculation
+        let rent = calculate_mock_rent_exemption(165);
+        assert!(rent > 0);
+        
+        println!("On-chain utilities test completed successfully");
         Ok(())
+    }
+    
+    #[test]
+    fn test_mock_account_info_creation() {
+        let key = Pubkey::new_unique();
+        let mut lamports = 1000000u64;
+        let mut data = vec![0u8; 100];
+        let owner = Pubkey::new_unique();
+        
+        let account_info = create_mock_account_info(
+            &key,
+            true,  // is_signer
+            true,  // is_writable
+            &mut lamports,
+            &mut data,
+            &owner,
+        );
+        
+        assert_eq!(*account_info.key, key);
+        assert_eq!(account_info.is_signer, true);
+        assert_eq!(account_info.is_writable, true);
+        assert_eq!(*account_info.owner, owner);
+        assert_eq!(account_info.data_len(), 100);
     }
 }
