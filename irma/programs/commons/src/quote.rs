@@ -273,12 +273,13 @@ pub fn get_bin_array_pubkeys_for_swap(
 
         if lb_pair.is_overflow_default_bin_array_bitmap(start_bin_array_idx) {
             let Some(bitmap_extension) = bitmap_extension else {
+                msg!("Out of search range. No extension.");
                 break;
             };
             let Ok((next_bin_array_idx, has_liquidity)) = bitmap_extension
                 .next_bin_array_index_with_liquidity(swap_for_y, start_bin_array_idx)
             else {
-                // Out of search range. No liquidity.
+                msg!("Out of search range. No liquidity.");
                 break;
             };
             if has_liquidity {
@@ -303,6 +304,8 @@ pub fn get_bin_array_pubkeys_for_swap(
             }
         }
     }
+
+    msg!("Bin array indices for swap: {:?}", bin_array_idx);
 
     let bin_array_pubkeys = bin_array_idx
         .into_iter()

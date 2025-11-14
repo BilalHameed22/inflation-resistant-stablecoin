@@ -7,8 +7,8 @@ use commons::token_2022::*;
 use std::collections::HashMap;
 use crate::{OnChainTestPair, create_mock_clock, create_mock_account_info, create_mock_mint_data, create_mock_token_2022_mint_data, create_mock_token_2022_account_data};
 
-#[tokio::test]
-async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
+#[test]
+fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     let mut test_pair = OnChainTestPair::new().unwrap();
     
     println!("Setting up Token 2022 on-chain swap test...");
@@ -141,8 +141,8 @@ async fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_token2022_transfer_fee_calculation() -> Result<()> {
+#[test]
+fn test_token2022_transfer_fee_calculation() -> Result<()> {
     let test_pair = OnChainTestPair::new().unwrap();
     
     println!("Testing Token 2022 transfer fee calculations...");

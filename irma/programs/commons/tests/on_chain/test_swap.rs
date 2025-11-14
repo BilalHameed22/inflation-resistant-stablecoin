@@ -1,12 +1,13 @@
 use super::utils::*;
 use anchor_lang::prelude::*;
+use anchor_spl::token::spl_token;
 use commons::quote::*;
 use commons::dlmm::accounts::*;
 use commons::dlmm::types::*;
 use std::collections::HashMap;
 
-#[tokio::test]
-async fn test_swap_exact_out_on_chain() -> Result<()> {
+#[test]
+fn test_swap_exact_out_on_chain() -> Result<()> {
     println!("Testing on-chain swap exact out logic...");
 
     // Create mock data for on-chain testing (no blockchain required)
@@ -93,8 +94,8 @@ async fn test_swap_exact_out_on_chain() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_swap_exact_in_on_chain() -> Result<()> {
+#[test]
+fn test_swap_exact_in_on_chain() -> Result<()> {
     println!("Testing on-chain swap exact in logic...");
 
     // Create mock data for pure on-chain testing
