@@ -37,19 +37,17 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
         &test_pair.config.program_id,
     );
 
-    println!("Token 2022 X Mint: {}", token_2022_mint_x.pubkey());
-    println!("Token 2022 Y Mint: {}", token_2022_mint_y.pubkey());
-
     // Create mock LB pair data for Token 2022
     let lb_pair_data = create_mock_lb_pair_token2022(
         token_2022_mint_x.pubkey(),
         token_2022_mint_y.pubkey(),
         test_pair.reserve_x,
         test_pair.reserve_y,
+        test_pair.lb_pair,
     );
 
     // Create mock bin arrays with Token 2022 considerations
-    let bin_arrays = create_mock_bin_arrays_token2022();
+    let bin_arrays = create_mock_bin_arrays_token2022(test_pair.lb_pair);
 
     // Test parameters
     let amount_out = 1000000; // 1 token (6 decimals)
@@ -61,7 +59,14 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     
     // Token 2022 mints have larger size due to extensions
     let mint_x_lamports = &mut 0u64;
-    let mint_x_data = &mut vec![0u8; 165]; // Token 2022 mint size with extensions
+    let mint_x_data = &mut create_mock_token_2022_mint_data(
+        Some(Pubkey::new_unique()), // mint authority
+        1000000000,                 // supply (1B tokens)
+        6,                          // decimals
+        true,                       // with transfer fee
+        100,                        // 1% transfer fee
+        1000000,                    // max fee
+    );
     let mint_x_owner = spl_token_2022::ID;
     let mint_x_account = AccountInfo::new(
         &mint_x_key,
@@ -75,7 +80,14 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     );
 
     let mint_y_lamports = &mut 0u64;
-    let mint_y_data = &mut vec![0u8; 165];
+    let mint_y_data = &mut create_mock_token_2022_mint_data(
+        Some(Pubkey::new_unique()), // mint authority
+        1000000000000,              // supply (1T tokens)
+        9,                          // decimals
+        false,                      // no transfer fee
+        0,                          // no transfer fee
+        0,                          // no max fee
+    );
     let mint_y_owner = spl_token_2022::ID;
     let mint_y_account = AccountInfo::new(
         &mint_y_key,
@@ -103,8 +115,6 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
         &[]
     );
 
-    println!("Transfer hook accounts found: {}", transfer_hook_accounts.len());
-
     // Perform the quote calculation
     let quote_result = quote_exact_out(
         test_pair.lb_pair,
@@ -120,10 +130,6 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
 
     match quote_result {
         Ok(quote) => {
-            println!("Token 2022 quote successful!");
-            println!("Amount in: {}", quote.amount_in);
-            println!("Fee: {}", quote.fee);
-            
             // Assertions for Token 2022
             assert!(quote.amount_in > 0, "Amount in should be greater than 0");
             assert!(quote.fee >= 0, "Fee should be non-negative");
@@ -168,7 +174,14 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
     // Create mock AccountInfo for the mint
     let mint_key = mint_with_fees.pubkey();
     let mint_lamports = &mut 0u64;
-    let mint_data = &mut vec![0u8; 200]; // Larger size for extensions
+    let mint_data = &mut create_mock_token_2022_mint_data(
+        Some(Pubkey::new_unique()), // mint authority
+        1000000000,                 // supply
+        6,                          // decimals
+        true,                       // with transfer fee
+        500,                        // 5% transfer fee (in basis points)
+        1000000,                    // Max fee of 1 token
+    );
     let mint_owner = spl_token_2022::ID;
     let mint_account_info = AccountInfo::new(
         &mint_key,
@@ -190,10 +203,6 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
 
     match included_result {
         Ok(transfer_fee) => {
-            println!("Transfer fee included calculation successful!");
-            println!("Pre-fee amount: {}", transfer_fee.amount);
-            println!("Transfer fee: {}", transfer_fee.transfer_fee);
-            
             assert!(transfer_fee.amount <= amount, "Pre-fee amount should be <= original amount");
             assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
         }
@@ -212,10 +221,6 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
 
     match excluded_result {
         Ok(transfer_fee) => {
-            println!("Transfer fee excluded calculation successful!");
-            println!("Post-fee amount: {}", transfer_fee.amount);
-            println!("Transfer fee: {}", transfer_fee.transfer_fee);
-            
             assert!(transfer_fee.amount >= amount, "Post-fee amount should be >= original amount");
             assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
         }
@@ -235,10 +240,31 @@ fn create_mock_lb_pair_token2022(
     token_y_mint: Pubkey,
     reserve_x: Pubkey,
     reserve_y: Pubkey,
+    lb_pair_key: Pubkey,
 ) -> LbPair {
     use commons::dlmm::types::*;
+    use commons::extensions::bin_array::BinArrayExtension;
     
     // Create a mock LbPair with Token 2022 considerations
+    // Use active_id = 8388608 which gives bin_array_index = 0 (center of symmetric range)
+    // Not to be confused with "active_id" in lb_pair_data, which starts from most negative value
+    let active_id = -35; // 8388608;
+    let bin_array_index = BinArray::bin_id_to_bin_array_index(active_id).unwrap(); // can be negative
+    
+    // Set up bitmap for bin_array_index = 0 (center position)
+    // Map symmetric range [-511..511] to bitmap positions [0..1023]
+    let mut bin_array_bitmap = [0u64; 16];
+
+    // turn on three bits
+    for i in 0..2 {
+        let bitmap_position = (bin_array_index + i + 512) as usize; // Map to positive range
+        if bitmap_position < 1024 {
+            let word_index = bitmap_position / 64;
+            let bit_index = bitmap_position % 64;
+            bin_array_bitmap[word_index] |= 1u64 << bit_index;
+        }
+    }
+    
     let mut lb_pair = LbPair {
         parameters: StaticParameters {
             base_factor: 5000,
@@ -267,7 +293,7 @@ fn create_mock_lb_pair_token2022(
         status: PairStatus::Enabled as u8,
         bin_step: 25,
         pair_type: PairType::PermissionlessV2 as u8,
-        active_id: 8388608,
+        active_id: 85, // Use active_id = 85 to get bin_array_index near 0
         bin_step_seed: [0; 2],
         token_x_mint,
         token_y_mint,
@@ -279,11 +305,11 @@ fn create_mock_lb_pair_token2022(
         },
         reward_infos: [RewardInfo::default(); 2],
         oracle: Pubkey::default(),
-        bin_array_bitmap: [0; 16],
+        bin_array_bitmap,
         last_updated_at: 1700000000,
         // whitelisted_wallet: Pubkey::default(),
         pre_activation_swap_address: Pubkey::default(),
-        base_key: Pubkey::default(),
+        base_key: lb_pair_key,
         activation_type: ActivationType::Timestamp as u8,
         creator_pool_on_off_control: 0u8,
         // _padding: [0; 7],
@@ -303,44 +329,46 @@ fn create_mock_lb_pair_token2022(
 }
 
 /// Helper function to create mock bin arrays for Token 2022
-fn create_mock_bin_arrays_token2022() -> HashMap<Pubkey, BinArray> {
+fn create_mock_bin_arrays_token2022(lb_pair_key: Pubkey) -> HashMap<Pubkey, BinArray> {
     use commons::dlmm::types::*;
+    use commons::extensions::bin_array::*;
+    use commons::pda::*;
     
     let mut bin_arrays = HashMap::new();
     
-    let bin_array_key = Pubkey::new_unique();
-    let mut bins = [Bin::default(); 70];
+    // Create bin arrays at multiple indices to ensure the quote function finds one
+    let indices_to_create = vec![-1i64, 0i64, 1i64];
     
-    // Add liquidity with Token 2022 considerations (potentially higher amounts due to transfer fees)
-    for i in 30..40 {
-        bins[i] = Bin {
-            amount_x: 2000000000, // Higher amounts to account for potential fees
-            amount_y: 2000000000000,
-            amount_x_in: 2100000000, // Simulate some transfer fee impact
-            amount_y_in: 2100000000000,
-            price: 1000000,
-            liquidity_supply: 2000000000,
-            reward_per_token_stored: [0; 2],
-            fee_amount_x_per_token_stored: 0,
-            fee_amount_y_per_token_stored: 0,
+    for &index in &indices_to_create {
+        let bin_array_pubkey = derive_bin_array_pda(lb_pair_key, index).0;
+        
+        let mut bins = [Bin::default(); 70];
+        
+        // Add liquidity to this bin array with Token 2022 considerations
+        for i in 0..69 {
+            bins[i] = Bin {
+                amount_x: 2000000000, // Higher amounts to account for potential fees
+                amount_y: 2000000000000,
+                amount_x_in: 2100000000, // Simulate some transfer fee impact
+                amount_y_in: 2100000000000,
+                price: (1000000 + (index * 100000) + (i as i64 * 1000)) as u128,
+                liquidity_supply: 2000000000,
+                reward_per_token_stored: [0; 2],
+                fee_amount_x_per_token_stored: 0,
+                fee_amount_y_per_token_stored: 0,
+            };
+        }
+        
+        let bin_array = BinArray {
+            index,
+            version: 0,
+            lb_pair: lb_pair_key,
+            _padding: [0; 7],
+            bins,
         };
+        
+        bin_arrays.insert(bin_array_pubkey, bin_array);
     }
-
-    let lb_pair = create_mock_lb_pair_token2022(
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-    );
     
-    let bin_array = BinArray {
-        index: 0,
-        version: 0,
-        lb_pair: lb_pair.base_key,
-        _padding: [0; 7],
-        bins,
-    };
-    
-    bin_arrays.insert(bin_array_key, bin_array);
     bin_arrays
 }

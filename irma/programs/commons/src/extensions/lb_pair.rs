@@ -213,7 +213,7 @@ impl LbPairExtension for LbPair {
         } else {
             self.active_id.checked_add(1)
         }
-        .ok_or("overflow").unwrap();
+        .ok_or("Nonexistent bin").unwrap();
 
         require!(
             next_active_bin_id >= MIN_BIN_ID && next_active_bin_id <= MAX_BIN_ID,
@@ -267,18 +267,19 @@ impl LbPairExtension for LbPair {
     fn next_bin_array_index_with_liquidity_internal(
         &self,
         swap_for_y: bool,
-        start_array_index: i32,
+        start_array_index: i32, // may be negative
     ) -> Result<(i32, bool)> {
         let bin_array_bitmap = U1024::from_limbs(self.bin_array_bitmap);
-        let array_offset: usize = Self::get_bin_array_offset(start_array_index);
+        let array_offset: usize = Self::get_bin_array_offset(start_array_index); // result is positive always
         let (min_bitmap_id, max_bitmap_id) = LbPair::bitmap_range();
+
         if swap_for_y {
-            let bitmap_range: usize = max_bitmap_id
+            let bitmap_range: usize = max_bitmap_id // result is positive always
                 .checked_sub(min_bitmap_id)
                 .ok_or("overflow").unwrap()
                 .try_into()
                 .unwrap();
-            let offset_bit_map =
+            let offset_bit_map = // bitmap after shifting left
                 bin_array_bitmap.shl(bitmap_range.checked_sub(array_offset).ok_or("overflow").unwrap());
 
             if offset_bit_map.eq(&U1024::ZERO) {

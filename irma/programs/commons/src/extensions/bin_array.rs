@@ -3,7 +3,7 @@ use num_integer::Integer;
 use crate::derive_bin_array_pda;
 use crate::dlmm::types::*;
 use crate::dlmm::accounts::*;
-use crate::MAX_BIN_PER_ARRAY;
+use crate::{MAX_BIN_PER_ARRAY, BIN_ARRAY_BITMAP_SIZE};
 use crate::CustomError;
 
 pub trait BinArrayExtension {
@@ -56,11 +56,10 @@ impl BinArrayExtension for BinArray {
         Ok(&self.bins[self.get_bin_index_in_array(bin_id)?])
     }
 
-    fn get_bin_index_in_array(&self, bin_id: i32) -> Result<usize> {
-        require!(self.is_bin_id_within_range(bin_id)?, CustomError::BinIdOutOfBound);
-        let (lower_bin_id, _) = BinArray::get_bin_array_lower_upper_bin_id(self.index as i32)?;
-        let index = bin_id.checked_sub(lower_bin_id).ok_or(CustomError::BinIdOutOfBound)?;
-        Ok(index as usize)
+    fn get_bin_index_in_array(&self, bin_id: i32) -> Result<usize> { // result must always be positive
+        let mut relative_bin_id = (bin_id + (MAX_BIN_PER_ARRAY as i32 * BIN_ARRAY_BITMAP_SIZE)) as usize;
+        let index = relative_bin_id % (MAX_BIN_PER_ARRAY as usize);
+        Ok(index)
     }
 
     fn bin_id_to_bin_array_index(bin_id: i32) -> Result<i32> {

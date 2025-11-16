@@ -230,7 +230,7 @@ pub fn create_mock_lb_pair(
         status: PairStatus::Enabled as u8,
         bin_step: 25,
         pair_type: PairType::PermissionlessV2 as u8,
-        active_id: 30000,
+        active_id: 8388608,
         bin_step_seed: [0; 2],
         token_x_mint,
         token_y_mint,

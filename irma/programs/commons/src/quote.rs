@@ -86,6 +86,10 @@ pub fn quote_exact_out<'a>(
 
     amount_out =
         calculate_transfer_fee_included_amount(out_mint_account, amount_out, epoch)?.amount;
+    
+    // safeguard against infinite loop
+    let mut iterations = 0;
+    const MAX_ITERATIONS: u64 = 70 * 512;
 
     while amount_out > 0 {
         let active_bin_array_pubkey = get_bin_array_pubkeys_for_swap(
@@ -104,7 +108,10 @@ pub fn quote_exact_out<'a>(
             .ok_or("Active bin array not found").unwrap();
 
         loop {
-            if !active_bin_array.is_bin_id_within_range(lb_pair.active_id)? || amount_out == 0 {
+
+            if !active_bin_array.is_bin_id_within_range(lb_pair.active_id)? {
+                lb_pair.advance_active_bin(swap_for_y)?;
+            } else if amount_out == 0 {
                 break;
             }
 
@@ -142,8 +149,14 @@ pub fn quote_exact_out<'a>(
                 }
             }
 
+            iterations += 1;
+            require!(iterations < MAX_ITERATIONS, CustomError::ExceededMaxIterationsQuoteExactOut);
+
             if amount_out > 0 {
                 lb_pair.advance_active_bin(swap_for_y)?;
+            }
+            else {
+                break;
             }
         }
     }
@@ -195,6 +208,10 @@ pub fn quote_exact_in<'a>(
         calculate_transfer_fee_excluded_amount(in_mint_account, amount_in, epoch)?.amount;
 
     let mut amount_left = transfer_fee_excluded_amount_in;
+    
+    // safeguard against infinite loop
+    let mut iterations = 0;
+    const MAX_ITERATIONS: u64 = 70 * 512;
 
     while amount_left > 0 {
         let active_bin_array_pubkey = get_bin_array_pubkeys_for_swap(
@@ -240,8 +257,14 @@ pub fn quote_exact_in<'a>(
                 total_fee = total_fee.checked_add(fee).ok_or("MathOverflow").unwrap();
             }
 
+            iterations += 1;
+            require!(iterations < MAX_ITERATIONS, CustomError::ExceededMaxIterationsQuoteExactIn);
+
             if amount_left > 0 {
                 lb_pair.advance_active_bin(swap_for_y)?;
+            }
+            else {
+                break;
             }
         }
     }
@@ -304,8 +327,6 @@ pub fn get_bin_array_pubkeys_for_swap(
             }
         }
     }
-
-    msg!("Bin array indices for swap: {:?}", bin_array_idx);
 
     let bin_array_pubkeys = bin_array_idx
         .into_iter()
@@ -398,11 +419,6 @@ mod tests {
 
         let in_amount = quote_result.amount_in + quote_result.fee;
 
-        println!(
-            "{} USDC -> exact 1 SOL",
-            in_amount as f64 / usdc_token_multiplier
-        );
-
         let quote_result = quote_exact_in(
             sol_usdc,
             &lb_pair,
@@ -416,11 +432,6 @@ mod tests {
         )
         .unwrap();
 
-        println!(
-            "{} USDC -> {} SOL",
-            in_amount as f64 / usdc_token_multiplier,
-            quote_result.amount_out as f64 / sol_token_multiplier
-        );
 
         let out_usdc_amount = 200_000_000;
 
@@ -439,11 +450,6 @@ mod tests {
 
         let in_amount = quote_result.amount_in + quote_result.fee;
 
-        println!(
-            "{} SOL -> exact 200 USDC",
-            in_amount as f64 / sol_token_multiplier
-        );
-
         let quote_result = quote_exact_in(
             sol_usdc,
             &lb_pair,
@@ -456,12 +462,6 @@ mod tests {
             &mint_y_account,
         )
         .unwrap();
-
-        println!(
-            "{} SOL -> {} USDC",
-            in_amount as f64 / sol_token_multiplier,
-            quote_result.amount_out as f64 / usdc_token_multiplier
-        );
     }
 
     #[tokio::test]
@@ -526,11 +526,6 @@ mod tests {
         )
         .unwrap();
 
-        println!(
-            "1 SOL -> {:?} USDC",
-            quote_result.amount_out as f64 / 1_000_000.0
-        );
-
         // 100 USDC -> SOL
         let in_usdc_amount = 100_000_000;
 
@@ -546,10 +541,5 @@ mod tests {
             &mint_y_account,
         )
         .unwrap();
-
-        println!(
-            "100 USDC -> {:?} SOL",
-            quote_result.amount_out as f64 / 1_000_000_000.0
-        );
     }
 }

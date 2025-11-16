@@ -87,7 +87,7 @@ pub fn create_mock_token_account_data(
     data
 }
 
-/// Create mock Token 2022 mint data with extensions
+/// Create mock Token 2022 mint data with extensions  
 pub fn create_mock_token_2022_mint_data(
     mint_authority: Option<Pubkey>,
     supply: u64,
@@ -96,23 +96,24 @@ pub fn create_mock_token_2022_mint_data(
     transfer_fee_basis_points: u16,
     max_fee: u64,
 ) -> Vec<u8> {
-    // Token 2022 mints can have extensions, so they need more space
+    // For testing purposes, create a basic structure
+    // The actual Token 2022 parsing will be handled gracefully in the calling code
     let mut data = vec![0u8; if with_transfer_fee { 300 } else { 200 }];
     
-    // Basic mint data structure (Token 2022 layout)
-    data[0] = 1; // Account type: Mint
-    data[4..12].copy_from_slice(&supply.to_le_bytes());
-    data[44] = decimals;
-    
+    // Set some basic fields to make it look like mint data
+    // This is simplified for testing - real Token 2022 structure is more complex
+    data[0] = 1; // Indicates this is a mint account
     if let Some(authority) = mint_authority {
-        data[12..44].copy_from_slice(authority.as_ref());
+        data[4..36].copy_from_slice(authority.as_ref());
     }
+    data[36..44].copy_from_slice(&supply.to_le_bytes());
+    data[44] = decimals;
+    data[45] = 1; // is_initialized
     
-    // Add transfer fee extension data if enabled
+    // Add some transfer fee data if requested
     if with_transfer_fee {
-        // Simplified transfer fee extension data
         data[200..202].copy_from_slice(&transfer_fee_basis_points.to_le_bytes());
-        data[208..216].copy_from_slice(&max_fee.to_le_bytes());
+        data[202..210].copy_from_slice(&max_fee.to_le_bytes());
     }
     
     data

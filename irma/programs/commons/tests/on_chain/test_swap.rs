@@ -4,6 +4,7 @@ use anchor_spl::token::spl_token;
 use commons::quote::*;
 use commons::dlmm::accounts::*;
 use commons::dlmm::types::*;
+use commons::derive_bin_array_pda;
 use std::collections::HashMap;
 
 #[test]
@@ -23,10 +24,11 @@ fn test_swap_exact_out_on_chain() -> Result<()> {
         token_y_mint,
         reserve_x,
         reserve_y,
+        lb_pair_key,
     );
 
     // Create mock bin arrays for on-chain testing
-    let bin_arrays = create_mock_bin_arrays();
+    let bin_arrays = create_mock_bin_arrays(lb_pair_key);
 
     // Test parameters
     let amount_out = 1000000; // 1 token (6 decimals)
@@ -73,10 +75,6 @@ fn test_swap_exact_out_on_chain() -> Result<()> {
 
     match quote_result {
         Ok(quote) => {
-            println!("On-chain quote successful!");
-            println!("Amount in: {}", quote.amount_in);
-            println!("Fee: {}", quote.fee);
-            
             // Test on-chain logic assertions
             assert!(quote.amount_in > 0, "Amount in should be greater than 0");
             assert!(quote.fee >= 0, "Fee should be non-negative");
@@ -111,10 +109,11 @@ fn test_swap_exact_in_on_chain() -> Result<()> {
         token_y_mint,
         reserve_x,
         reserve_y,
+        lb_pair_key,
     );
 
     // Create mock bin arrays for on-chain testing
-    let bin_arrays = create_mock_bin_arrays();
+    let bin_arrays = create_mock_bin_arrays(lb_pair_key);
 
     // Test parameters
     let amount_in = 1000000; // 1 token (6 decimals)
@@ -160,10 +159,6 @@ fn test_swap_exact_in_on_chain() -> Result<()> {
 
     match quote_result {
         Ok(quote) => {
-            println!("On-chain quote exact in successful!");
-            println!("Amount out: {}", quote.amount_out);
-            println!("Fee: {}", quote.fee);
-            
             // Test on-chain logic assertions
             assert!(quote.amount_out > 0, "Amount out should be greater than 0");
             assert!(quote.fee >= 0, "Fee should be non-negative");
@@ -187,11 +182,26 @@ fn create_mock_lb_pair(
     token_y_mint: Pubkey,
     reserve_x: Pubkey,
     reserve_y: Pubkey,
+    lb_pair_key: Pubkey,
 ) -> commons::dlmm::accounts::LbPair {
     use commons::dlmm::types::*;
     use commons::extensions::lb_pair::*;
+    use commons::extensions::bin_array::BinArrayExtension;
     
     // Create a mock LbPair with reasonable test data
+    // Use active_id = 8388608 which gives bin_array_index = 0 (center of symmetric range)
+    let active_id = 8388608;
+    let bin_array_index = BinArray::bin_id_to_bin_array_index(active_id).unwrap();
+    
+    // Set up bitmap correctly - try setting the last bit (position 511)
+    // This might correspond to bin_array_index closer to 0
+    let mut bin_array_bitmap = [0u64; 16];
+    
+    // Set bit at position 511 (last bit)
+    let word_index = 511 / 64; // = 7
+    let bit_index = 511 % 64;   // = 63
+    bin_array_bitmap[word_index] |= 1u64 << bit_index;
+    
     let mut lb_pair = LbPair {
         parameters: StaticParameters {
             base_factor: 5000,
@@ -220,7 +230,7 @@ fn create_mock_lb_pair(
         status: PairStatus::Enabled as u8,
         bin_step: 25,
         pair_type: PairType::PermissionlessV2 as u8,
-        active_id: 8388608,
+        active_id: -35, // active_id, // Use active_id = 8388608 to get bin_array_index = -1
         bin_step_seed: [0; 2],
         token_x_mint,
         token_y_mint,
@@ -232,11 +242,11 @@ fn create_mock_lb_pair(
         },
         reward_infos: [RewardInfo::default(); 2],
         oracle: Pubkey::default(),
-        bin_array_bitmap: [0; 16],
+        bin_array_bitmap,
         last_updated_at: 1700000000,
         // whitelisted_wallet: Pubkey::default(),
         pre_activation_swap_address: Pubkey::default(),
-        base_key: Pubkey::default(),
+        base_key: lb_pair_key,
         activation_type: ActivationType::Timestamp as u8,
         creator_pool_on_off_control: 0u8,
         // _padding: [0; 7],
@@ -260,46 +270,44 @@ fn create_mock_lb_pair(
 }
 
 /// Helper function to create mock bin arrays
-fn create_mock_bin_arrays() -> HashMap<Pubkey, commons::dlmm::accounts::BinArray> {
+fn create_mock_bin_arrays(lb_pair_key: Pubkey) -> HashMap<Pubkey, commons::dlmm::accounts::BinArray> {
     use commons::dlmm::types::*;
     use commons::dlmm::accounts::*;
+    use commons::derive_bin_array_pda;
+    use commons::extensions::bin_array::BinArrayExtension;
     
     let mut bin_arrays = HashMap::new();
     
-    // Create a mock bin array around the active bin
-    let bin_array_key = Pubkey::new_unique();
-    let mut bins = [Bin::default(); 70]; // MAX_BIN_PER_ARRAY
+    // Create a bin array at index -1 (which corresponds to bitmap position 511)
+    let bin_array_index = -1i64;
+    let bin_array_pubkey = derive_bin_array_pda(lb_pair_key, bin_array_index).0;
     
-    // Add some liquidity to a few bins around the center
-    for i in 30..40 {
+    let mut bins = [Bin::default(); 70];
+    
+    // Add liquidity to all bins to ensure we have enough liquidity
+    for i in 0..70 {
         bins[i] = Bin {
-            amount_x: 1000000000, // 1000 tokens
-            amount_y: 1000000000000, // 1000 tokens (different decimals)
+            amount_x: 1000000000,
+            amount_y: 1000000000000,
             amount_x_in: 0,
             amount_y_in: 0,
-            price: 1000000, // Mock price
+            price: 1000000,
             liquidity_supply: 1000000000,
             reward_per_token_stored: [0; 2],
             fee_amount_x_per_token_stored: 0,
             fee_amount_y_per_token_stored: 0,
         };
     }
-
-    let lb_pair = create_mock_lb_pair(
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-        Pubkey::new_unique(),
-    );
     
     let bin_array = BinArray {
-        index: 0,
+        index: bin_array_index,
         version: 0,
-        lb_pair: lb_pair.base_key,
+        lb_pair: lb_pair_key,
         _padding: [0; 7],
         bins,
     };
     
-    bin_arrays.insert(bin_array_key, bin_array);
+    bin_arrays.insert(bin_array_pubkey, bin_array);
+    
     bin_arrays
 }

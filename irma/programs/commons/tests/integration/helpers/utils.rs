@@ -1,13 +1,14 @@
+use anchor_lang::prelude::*;
+use anchor_lang::prelude::instruction::*;
 use anchor_spl::associated_token::*;
-use anchor_spl::token::spl_token;
+// use anchor_spl::token::spl_token;
+use anchor_spl::token::*;
 use assert_matches::assert_matches;
-use solana_program_test::BanksClient;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-    signature::{Keypair, Signer},
-    transaction::Transaction,
-};
+// use anchor_lang::Keypair;
+use crate::*;
+use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::transaction::Transaction;
+
 pub async fn process_and_assert_ok(
     instructions: &[Instruction],
     payer: &Keypair,
@@ -21,7 +22,7 @@ pub async fn process_and_assert_ok(
 
     let tx = Transaction::new_signed_with_payer(
         instructions,
-        Some(&payer.pubkey()),
+        Some(&payer.try_pubkey().unwrap()),
         &all_signers,
         recent_blockhash,
     );
@@ -33,22 +34,21 @@ pub async fn process_and_assert_ok(
     assert_matches!(result, Ok(()));
 }
 
-pub async fn get_or_create_ata(
+pub fn get_or_create_ata(
     payer: &Keypair,
     token_mint: &Pubkey,
     authority: &Pubkey,
     banks_client: &mut BanksClient,
 ) -> Pubkey {
-    let token_mint_owner = banks_client
-        .get_account(*token_mint)
-        .await
-        .ok()
-        .flatten()
-        .unwrap()
-        .owner;
+    let token_mint_owner = AccountInfo::try_from(*token_mint).unwrap().owner;
+        // .get_account(*token_mint)
+        // .ok()
+        // .flatten()
+        // .unwrap()
+        // .owner;
     let ata_address =
         get_associated_token_address_with_program_id(authority, token_mint, &token_mint_owner);
-    let ata_account = banks_client.get_account(ata_address).await.unwrap();
+    let ata_account = banks_client.get_account(ata_address).unwrap();
     if ata_account.is_none() {
         create_associated_token_account(
             payer,
@@ -56,8 +56,7 @@ pub async fn get_or_create_ata(
             authority,
             &token_mint_owner,
             banks_client,
-        )
-        .await;
+        );
     }
     ata_address
 }
@@ -72,7 +71,7 @@ pub async fn create_associated_token_account(
     println!("{}", program_id);
     let ins = vec![
         spl_associated_token_account::instruction::create_associated_token_account(
-            &payer.pubkey(),
+            &payer.try_pubkey().unwrap(),
             authority,
             token_mint,
             program_id,
@@ -95,14 +94,14 @@ pub async fn warp_sol(
 
     let create_wsol_ata_ix =
         spl_associated_token_account::instruction::create_associated_token_account(
-            &payer.pubkey(),
-            &payer.pubkey(),
+            &payer.try_pubkey().unwrap(),
+            &payer.try_pubkey().unwrap(),
             &spl_token::native_mint::id(),
             &spl_token::id(),
         );
 
     let transfer_sol_ix =
-        solana_program::system_instruction::transfer(&payer.pubkey(), &wsol_ata, amount);
+        solana_program::system_instruction::transfer(&payer.try_pubkey().unwrap(), &wsol_ata, amount);
 
     let sync_native_ix = spl_token::instruction::sync_native(&spl_token::id(), &wsol_ata).unwrap();
 

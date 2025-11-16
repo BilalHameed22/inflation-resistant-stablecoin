@@ -2,7 +2,7 @@
 pub const PRECISION: u128 = 1_000_000_000_000;
 
 // Number of bits to scale. This will decide the position of the radix point.
-pub const SCALE_OFFSET: u8 = 64;
+pub const SCALE_OFFSET: u8 = 20; // 64;
 
 // Where does this value come from ?
 // When smallest bin is used (1 bps), the maximum of bin limit is 887272 (Check: https://docs.traderjoexyz.com/concepts/bin-math).

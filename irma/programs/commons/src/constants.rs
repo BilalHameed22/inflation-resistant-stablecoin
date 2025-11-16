@@ -93,4 +93,10 @@ pub enum CustomError {
     InvalidAmount,
     #[msg("Pair has insufficient liquidity.")]
     PairInsufficientLiquidity,
+    #[msg("Math operation resulted in an error.")]
+    MathError,
+    #[msg("Exceeded maximum iterations in quote_exact_out")]
+    ExceededMaxIterationsQuoteExactOut,
+    #[msg("Exceeded maximum iterations in quote_exact_in")]
+    ExceededMaxIterationsQuoteExactIn,
 }

@@ -1,4 +1,13 @@
+use anchor_spl::token::TokenAccount;
+use anchor_lang::prelude::*;
+use solana_sdk::sysvar::clock::Clock;
+use anchor_spl::token::spl_token;
+use commons::dlmm::accounts::LbPair;
+use commons::dlmm::types::RemainingAccountsInfo;
+use crate::helpers::utils::{process_and_assert_ok, warp_sol};
 use crate::*;
+
+const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
 
 struct Token2022TestPair {
     lb_pair: Pubkey,
@@ -11,8 +20,8 @@ struct Token2022TestPair {
     bin_array_2: Pubkey,
 }
 
-fn setup_token_2022_test_pair() -> (ProgramTest, Token2022TestPair) {
-    let mut test = ProgramTest::default();
+fn setup_token_2022_test_pair() -> (Context, Token2022TestPair) {
+    let mut test = Context::new();
     test.prefer_bpf(true);
     test.add_program("./tests/artifacts/lb_clmm_prod", dlmm::ID, None);
     test.add_program("./tests/artifacts/token_2022", spl_token_2022::ID, None);
@@ -90,8 +99,8 @@ fn setup_token_2022_test_pair() -> (ProgramTest, Token2022TestPair) {
     )
 }
 
-#[tokio::test]
-async fn test_swap_exact_out() {
+#[test]
+fn test_swap_exact_out() {
     let (
         test,
         Token2022TestPair {
@@ -106,31 +115,31 @@ async fn test_swap_exact_out() {
         },
     ) = setup_token_2022_test_pair();
 
-    let (mut banks_client, payer, _recent_blockhash) = test.start().await;
+    let (mut banks_client, payer, _recent_blockhash) = test.start();
 
     warp_sol(
         &payer,
-        payer.pubkey(),
+        payer.Pubkey,
         1 * LAMPORTS_PER_SOL,
         &mut banks_client,
     )
-    .await;
+    ;
 
     for (in_mint, out_mint, out_amount) in [
         (token_y_mint, token_x_mint, 10_000_000),
         (token_x_mint, token_y_mint, 1_000_000),
     ] {
         let user_token_in =
-            get_or_create_ata(&payer, &in_mint, &payer.pubkey(), &mut banks_client).await;
+            get_or_create_ata(&payer, &in_mint, &payer.Pubkey, &mut banks_client);
 
         let user_token_out =
-            get_or_create_ata(&payer, &out_mint, &payer.pubkey(), &mut banks_client).await;
+            get_or_create_ata(&payer, &out_mint, &payer.Pubkey, &mut banks_client);
 
         let (event_authority, _bump) = derive_event_authority_pda();
 
         let lb_pair_account = banks_client
             .get_account(lb_pair)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -139,7 +148,7 @@ async fn test_swap_exact_out() {
 
         let bin_array_1_account = banks_client
             .get_account(bin_array_1)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -148,7 +157,7 @@ async fn test_swap_exact_out() {
 
         let bin_array_2_account = banks_client
             .get_account(bin_array_2)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -159,18 +168,18 @@ async fn test_swap_exact_out() {
         bin_arrays.insert(bin_array_1, bin_array_1_state);
         bin_arrays.insert(bin_array_2, bin_array_2_state);
 
-        let clock = get_clock(&mut banks_client).await;
+        let clock = Clock::get().unwrap();
 
         let mint_x_account = banks_client
             .get_account(lb_pair_state.token_x_mint)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
 
         let mint_y_account = banks_client
             .get_account(lb_pair_state.token_y_mint)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -194,14 +203,14 @@ async fn test_swap_exact_out() {
 
         let user_token_out_account_before = banks_client
             .get_account(user_token_out)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
 
         let user_token_in_account_before = banks_client
             .get_account(user_token_in)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -224,7 +233,7 @@ async fn test_swap_exact_out() {
             token_x_mint,
             token_y_mint,
             host_fee_in: Some(dlmm::ID),
-            user: payer.pubkey(),
+            user: payer.Pubkey,
             token_x_program: spl_token_2022::ID,
             token_y_program: spl_token::ID,
             program: dlmm::ID,
@@ -252,18 +261,18 @@ async fn test_swap_exact_out() {
             .data(),
         };
 
-        process_and_assert_ok(&[swap_ix], &payer, &[&payer], &mut banks_client).await;
+        process_and_assert_ok(&[swap_ix], &payer, &[&payer], &mut banks_client);
 
         let user_token_out_account_after = banks_client
             .get_account(user_token_out)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
 
         let user_token_in_account_after = banks_client
             .get_account(user_token_in)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -286,8 +295,8 @@ async fn test_swap_exact_out() {
     }
 }
 
-#[tokio::test]
-async fn test_swap() {
+#[test]
+fn test_swap() {
     let (
         test,
         Token2022TestPair {
@@ -302,31 +311,31 @@ async fn test_swap() {
         },
     ) = setup_token_2022_test_pair();
 
-    let (mut banks_client, payer, _recent_blockhash) = test.start().await;
+    let (mut banks_client, payer, _recent_blockhash) = test.start();
 
     warp_sol(
         &payer,
-        payer.pubkey(),
+        payer.Pubkey,
         1 * LAMPORTS_PER_SOL,
         &mut banks_client,
     )
-    .await;
+    ;
 
     for (in_mint, out_mint, amount_in) in [
         (token_y_mint, token_x_mint, 10_000_000),
         (token_x_mint, token_y_mint, 1_000_000),
     ] {
         let user_token_in =
-            get_or_create_ata(&payer, &in_mint, &payer.pubkey(), &mut banks_client).await;
+            get_or_create_ata(&payer, &in_mint, &payer.Pubkey, &mut banks_client);
 
         let user_token_out =
-            get_or_create_ata(&payer, &out_mint, &payer.pubkey(), &mut banks_client).await;
+            get_or_create_ata(&payer, &out_mint, &payer.Pubkey, &mut banks_client);
 
         let (event_authority, _bump) = derive_event_authority_pda();
 
         let lb_pair_account = banks_client
             .get_account(lb_pair)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -335,7 +344,7 @@ async fn test_swap() {
 
         let bin_array_1_account = banks_client
             .get_account(bin_array_1)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -344,7 +353,7 @@ async fn test_swap() {
 
         let bin_array_2_account = banks_client
             .get_account(bin_array_2)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -355,18 +364,18 @@ async fn test_swap() {
         bin_arrays.insert(bin_array_1, bin_array_1_state);
         bin_arrays.insert(bin_array_2, bin_array_2_state);
 
-        let clock = get_clock(&mut banks_client).await;
+        let clock = Clock::get().unwrap();
 
         let mint_x_account = banks_client
             .get_account(lb_pair_state.token_x_mint)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
 
         let mint_y_account = banks_client
             .get_account(lb_pair_state.token_y_mint)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
@@ -390,7 +399,6 @@ async fn test_swap() {
 
         let user_token_out_account_before = banks_client
             .get_account(user_token_out)
-            .await
             .ok()
             .flatten()
             .unwrap();
@@ -410,7 +418,7 @@ async fn test_swap() {
             token_x_mint,
             token_y_mint,
             host_fee_in: Some(dlmm::ID),
-            user: payer.pubkey(),
+            user: payer.Pubkey,
             token_x_program: spl_token_2022::ID,
             token_y_program: spl_token::ID,
             program: dlmm::ID,
@@ -438,11 +446,11 @@ async fn test_swap() {
             .data(),
         };
 
-        process_and_assert_ok(&[swap_ix], &payer, &[&payer], &mut banks_client).await;
+        process_and_assert_ok(&[swap_ix], &payer, &[&payer], &mut banks_client);
 
         let user_token_out_account_after = banks_client
             .get_account(user_token_out)
-            .await
+            
             .ok()
             .flatten()
             .unwrap();
