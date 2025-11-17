@@ -79,6 +79,8 @@ pub const MIN_BASE_FEE: u128 = 100_000; // 0.01% (10^9 * 0.01 / 100)
 
 #[error_code]
 pub enum CustomError {
+    #[msg("Account not found")]
+    AccountNotFound,
     #[msg("Active bin id is out of bounds.")]
     ActiveBinOutOfBounds,
     #[msg("Bin ID is out of bounds.")]
@@ -99,4 +101,18 @@ pub enum CustomError {
     ExceededMaxIterationsQuoteExactOut,
     #[msg("Exceeded maximum iterations in quote_exact_in")]
     ExceededMaxIterationsQuoteExactIn,
+    #[msg("Bin array not found.")]
+    BinArrayNotFound,
+    #[msg("Bin array is not correct")]
+    BinArrayIsNotCorrect,
+    #[msg("Amount x is not zero")]
+    AmountXNotZero,
+    #[msg("Amount y is not zero")]
+    AmountYNotZero,
+    #[msg("Lb pair state not found")]
+    LbPairStateNotFound,
+    #[msg("Cannot get binarray")]
+    CannotGetBinArray,
+    #[msg("Bin is not within the position")]
+    BinIsNotWithinThePosition
 }

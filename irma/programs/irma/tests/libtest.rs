@@ -14,11 +14,6 @@ mod tests {
     use anchor_lang::system_program;
     use anchor_lang::Accounts;
 
-    use openbook_v2::state::EventHeap; // {EventHeap, Market};
-    use openbook_v2::typedefs::{EventHeapHeader, EventNode, AnyEvent, OracleConfig};
-    use openbook_v2::ix_accounts::{ConsumeEvents, PlaceOrder};
-    use openbook_v2::ID as OPENBOOKV2_ID;
-
     use irma::irma as money;
     use irma::pricing::{StateMap, StableState};
     use irma::IRMA_ID;

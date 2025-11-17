@@ -1,10 +1,11 @@
 use crate::MarketMakingMode;
+use crate::error::Error;
 use anchor_lang::prelude::Pubkey;
 use borsh::BorshDeserialize;
 use std::fs::File;
 use std::io::Read;
 
-#[derive(Debug, BorshDeserialize, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PairConfig {
     pub pair_address: String,
     pub x_amount: u64,
