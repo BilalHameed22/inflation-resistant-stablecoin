@@ -4,9 +4,6 @@ mod test_swap_token2022;
 mod utils;
 
 pub use mod_test::*;
-pub use test_swap::*;
-pub use test_swap_token2022::*;
-pub use utils::*;
 
 // Re-export common types for convenience in on-chain tests
 pub use anchor_lang::prelude::*;

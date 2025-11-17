@@ -3,8 +3,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::spl_token;
 use commons::quote::*;
 use commons::dlmm::accounts::*;
-use commons::dlmm::types::*;
-use commons::derive_bin_array_pda;
 use std::collections::HashMap;
 
 #[test]
@@ -77,7 +75,7 @@ fn test_swap_exact_out_on_chain() -> Result<()> {
         Ok(quote) => {
             // Test on-chain logic assertions
             assert!(quote.amount_in > 0, "Amount in should be greater than 0");
-            assert!(quote.fee >= 0, "Fee should be non-negative");
+            // assert!(quote.fee >= 0, "Fee should be non-negative");
             
             // The amount in should be reasonable (not too high)
             assert!(quote.amount_in < amount_out * 2, "Amount in should be reasonable");
@@ -161,7 +159,7 @@ fn test_swap_exact_in_on_chain() -> Result<()> {
         Ok(quote) => {
             // Test on-chain logic assertions
             assert!(quote.amount_out > 0, "Amount out should be greater than 0");
-            assert!(quote.fee >= 0, "Fee should be non-negative");
+            // assert!(quote.fee >= 0, "Fee should be non-negative");
             
             // The amount out should be less than amount in (due to fees)
             assert!(quote.amount_out <= amount_in, "Amount out should be less than or equal to amount in");
@@ -185,13 +183,6 @@ fn create_mock_lb_pair(
     lb_pair_key: Pubkey,
 ) -> commons::dlmm::accounts::LbPair {
     use commons::dlmm::types::*;
-    use commons::extensions::lb_pair::*;
-    use commons::extensions::bin_array::BinArrayExtension;
-    
-    // Create a mock LbPair with reasonable test data
-    // Use active_id = 8388608 which gives bin_array_index = 0 (center of symmetric range)
-    let active_id = 8388608;
-    let bin_array_index = BinArray::bin_id_to_bin_array_index(active_id).unwrap();
     
     // Set up bitmap correctly - try setting the last bit (position 511)
     // This might correspond to bin_array_index closer to 0
@@ -263,7 +254,7 @@ fn create_mock_lb_pair(
     };
 
     // Set status to enabled
-    let mut pair_status = PairStatus::Enabled as u8;
+    let pair_status = PairStatus::Enabled as u8;
     lb_pair.pair_type = pair_status;
 
     lb_pair
@@ -274,7 +265,7 @@ fn create_mock_bin_arrays(lb_pair_key: Pubkey) -> HashMap<Pubkey, commons::dlmm:
     use commons::dlmm::types::*;
     use commons::dlmm::accounts::*;
     use commons::derive_bin_array_pda;
-    use commons::extensions::bin_array::BinArrayExtension;
+    
     
     let mut bin_arrays = HashMap::new();
     

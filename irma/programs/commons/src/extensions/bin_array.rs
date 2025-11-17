@@ -4,7 +4,6 @@ use crate::derive_bin_array_pda;
 use crate::dlmm::types::*;
 use crate::dlmm::accounts::*;
 use crate::{MAX_BIN_PER_ARRAY, BIN_ARRAY_BITMAP_SIZE};
-use crate::CustomError;
 
 pub trait BinArrayExtension {
     fn is_bin_id_within_range(&self, bin_id: i32) -> Result<bool>;
@@ -57,7 +56,7 @@ impl BinArrayExtension for BinArray {
     }
 
     fn get_bin_index_in_array(&self, bin_id: i32) -> Result<usize> { // result must always be positive
-        let mut relative_bin_id = (bin_id + (MAX_BIN_PER_ARRAY as i32 * BIN_ARRAY_BITMAP_SIZE)) as usize;
+        let relative_bin_id = (bin_id + (MAX_BIN_PER_ARRAY as i32 * BIN_ARRAY_BITMAP_SIZE)) as usize;
         let index = relative_bin_id % (MAX_BIN_PER_ARRAY as usize);
         Ok(index)
     }

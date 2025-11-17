@@ -2,14 +2,13 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_2022::*;
 use commons::quote::*;
 use commons::dlmm::accounts::*;
-use commons::dlmm::types::*;
 use commons::token_2022::*;
 use std::collections::HashMap;
-use crate::{OnChainTestPair, create_mock_clock, create_mock_account_info, create_mock_mint_data, create_mock_token_2022_mint_data, create_mock_token_2022_account_data};
+use crate::{OnChainTestPair, create_mock_token_2022_mint_data};
 
 #[test]
 fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
-    let mut test_pair = OnChainTestPair::new().unwrap();
+    let test_pair = OnChainTestPair::new().unwrap();
     
     println!("Setting up Token 2022 on-chain swap test...");
     
@@ -27,12 +26,12 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     );
 
     // Create Token 2022 accounts
-    let user_token_2022_x = test_pair.config.create_token_2022_account(
+    let _user_token_2022_x = test_pair.config.create_token_2022_account(
         &token_2022_mint_x.pubkey(),
         &test_pair.config.program_id,
     );
     
-    let user_token_2022_y = test_pair.config.create_token_2022_account(
+    let _user_token_2022_y = test_pair.config.create_token_2022_account(
         &token_2022_mint_y.pubkey(),
         &test_pair.config.program_id,
     );
@@ -109,7 +108,7 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
     };
 
     // Test Token 2022 specific functionality
-    let transfer_hook_accounts = get_extra_account_metas_for_transfer_hook(
+    let _transfer_hook_accounts = get_extra_account_metas_for_transfer_hook(
         token_2022_mint_x.pubkey(),
         mint_x_account.clone(),
         &[]
@@ -132,7 +131,7 @@ fn test_swap_token2022_exact_out_on_chain() -> Result<()> {
         Ok(quote) => {
             // Assertions for Token 2022
             assert!(quote.amount_in > 0, "Amount in should be greater than 0");
-            assert!(quote.fee >= 0, "Fee should be non-negative");
+            // assert!(quote.fee >= 0, "Fee should be non-negative");
             
             // Token 2022 might have transfer fees, so amount in could be higher
             assert!(quote.amount_in < amount_out * 3, "Amount in should be reasonable even with transfer fees");
@@ -162,7 +161,7 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
         1000000, // Max fee of 1 token
     );
 
-    let token_account = test_pair.config.create_token_2022_account(
+    let _token_account = test_pair.config.create_token_2022_account(
         &mint_with_fees.pubkey(),
         &test_pair.config.program_id,
     );
@@ -204,7 +203,7 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
     match included_result {
         Ok(transfer_fee) => {
             assert!(transfer_fee.amount <= amount, "Pre-fee amount should be <= original amount");
-            assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
+            // assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
         }
         Err(e) => {
             println!("Transfer fee calculation failed: {:?}", e);
@@ -222,7 +221,7 @@ fn test_token2022_transfer_fee_calculation() -> Result<()> {
     match excluded_result {
         Ok(transfer_fee) => {
             assert!(transfer_fee.amount >= amount, "Post-fee amount should be >= original amount");
-            assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
+            // assert!(transfer_fee.transfer_fee >= 0, "Transfer fee should be non-negative");
         }
         Err(e) => {
             println!("Transfer fee excluded calculation failed: {:?}", e);
@@ -265,7 +264,7 @@ fn create_mock_lb_pair_token2022(
         }
     }
     
-    let mut lb_pair = LbPair {
+    let lb_pair = LbPair {
         parameters: StaticParameters {
             base_factor: 5000,
             filter_period: 30,
@@ -331,7 +330,7 @@ fn create_mock_lb_pair_token2022(
 /// Helper function to create mock bin arrays for Token 2022
 fn create_mock_bin_arrays_token2022(lb_pair_key: Pubkey) -> HashMap<Pubkey, BinArray> {
     use commons::dlmm::types::*;
-    use commons::extensions::bin_array::*;
+    
     use commons::pda::*;
     
     let mut bin_arrays = HashMap::new();

@@ -5,7 +5,6 @@
 use anchor_lang::prelude::*;
 use commons::dlmm::types::*;
 use commons::dlmm::accounts::*;
-use commons::quote::*;
 use std::collections::HashMap;
 
 /// Pure on-chain test configuration for testing program logic
@@ -50,9 +49,9 @@ impl OnChainTestConfig {
     /// Create a mock Token 2022 mint for on-chain testing
     pub fn create_token_2022_mint(
         &self,
-        mint_authority: &Pubkey,
-        freeze_authority: Option<&Pubkey>,
-        decimals: u8,
+        _mint_authority: &Pubkey,
+        _freeze_authority: Option<&Pubkey>,
+        _decimals: u8,
     ) -> MockKeypair {
         let mint_pubkey = Pubkey::new_unique();
         MockKeypair::new(mint_pubkey)
@@ -61,8 +60,8 @@ impl OnChainTestConfig {
     /// Create a mock Token 2022 account for on-chain testing  
     pub fn create_token_2022_account(
         &self,
-        mint: &Pubkey,
-        owner: &Pubkey,
+        _mint: &Pubkey,
+        _owner: &Pubkey,
     ) -> MockKeypair {
         let account_pubkey = Pubkey::new_unique();
         MockKeypair::new(account_pubkey)
@@ -71,11 +70,11 @@ impl OnChainTestConfig {
     /// Create a mock Token 2022 mint with transfer fees for on-chain testing
     pub fn create_token_2022_mint_with_transfer_fee(
         &self,
-        mint_authority: &Pubkey,
-        freeze_authority: Option<&Pubkey>,
-        decimals: u8,
-        transfer_fee_basis_points: u16,
-        max_fee: u64,
+        _mint_authority: &Pubkey,
+        _freeze_authority: Option<&Pubkey>,
+        _decimals: u8,
+        _transfer_fee_basis_points: u16,
+        _max_fee: u64,
     ) -> MockKeypair {
         let mint_pubkey = Pubkey::new_unique();
         MockKeypair::new(mint_pubkey)
@@ -323,9 +322,9 @@ mod tests {
     #[test]
     fn test_pda_generation() {
         let config = OnChainTestConfig::new();
-        let (pda, bump) = config.generate_pda(&[b"test", b"seed"]);
+        let (pda, _bump) = config.generate_pda(&[b"test", b"seed"]);
         
-        assert!(bump <= 255);
+        // assert!(bump <= 255);
         assert_ne!(pda, Pubkey::default());
     }
 

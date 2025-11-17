@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use std::collections::HashMap;
 use anyhow::anyhow;
 
 /// Create mock Clock for on-chain testing
@@ -244,14 +243,14 @@ mod tests {
         assert_eq!(balance, 500000);
         
         // Test balance update
-        set_token_balance_in_data(&mut token_data, 750000);
+        let _nothing = set_token_balance_in_data(&mut token_data, 750000);
         let new_balance = get_token_balance_from_data(&token_data).unwrap();
         assert_eq!(new_balance, 750000);
         
         // Test PDA creation
         let program_id = Pubkey::new_unique();
-        let (pda, bump) = create_mock_pda(&[b"test", b"seed"], &program_id);
-        assert!(bump <= 255);
+        let (_pda, _bump) = create_mock_pda(&[b"test", b"seed"], &program_id);
+        // assert!(bump <= 255u8);
         
         // Test rent calculation
         let rent = calculate_mock_rent_exemption(165);
