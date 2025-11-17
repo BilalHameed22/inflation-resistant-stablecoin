@@ -6,7 +6,7 @@ use std::string::String;
 use std::option::Option;
 // use anchor_lang_idl_spec::IdlType::Option as IdlOption;
 // use anchor_lang_idl_spec::IdlType::Pubkey as IdlPubkey;
-
+use crate::{Init, Maint, Common};
 use anchor_lang::*;
 // use anchor_lang::system_program::ID;
 use anchor_lang::prelude::*;
@@ -14,7 +14,7 @@ use Vec;
 use std::collections::BTreeMap;
 use static_assertions::const_assert_eq;
 use core::mem::size_of;
-use solana_program::pubkey;
+// use anchor_lang::solana_program::pubkey;
 
 
 // The number of stablecoins that are initially supported by the IRMA program.
@@ -101,7 +101,7 @@ fn validate_params(state_map: &StateMap, quote_token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Common of IRMA expressed in terms of a given quote token.
+/// Set mint price for a given quote token based on inflation data.
 /// This should be called for every backing stablecoin supported, only once per day
 /// because Truflation updates the inflation data only once per day.
 pub fn set_mint_price(ctx: Context<Common>, quote_token: &str, mint_price: f64) -> Result<()> {
@@ -170,6 +170,36 @@ pub fn get_reserve_info(ctx: Context<Common>, quote_token: &str) -> Result<Stabl
     Ok(stablecoin.clone())
 }
 
+/// Get the current redemption price for a given quote token.
+/// Redemption price = total backing reserves / total IRMA in circulation
+pub fn get_redemption_price(ctx: Context<Common>, quote_token: &str) -> Result<f64> {
+    let state_map = &mut ctx.accounts.state;
+    validate_params(&(*state_map), quote_token)?;
+    
+    let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
+    let backing_reserves = stablecoin.backing_reserves as f64;
+    let irma_in_circulation = stablecoin.irma_in_circulation as f64;
+    
+    if irma_in_circulation == 0.0 {
+        return Ok(1.0); // Default to 1.0 if no IRMA in circulation
+    }
+    
+    let redemption_price = backing_reserves / irma_in_circulation;
+    Ok(redemption_price)
+}
+
+/// Get both mint and redemption prices for a given quote token.
+pub fn get_prices(ctx: Context<Common>, quote_token: &str) -> Result<(f64, f64)> {
+    let state_map = &mut ctx.accounts.state;
+    validate_params(&(*state_map), quote_token)?;
+    
+    let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
+    let mint_price = stablecoin.mint_price;
+    let redemption_price = get_redemption_price(ctx, quote_token)?;
+    
+    Ok((mint_price, redemption_price))
+}
+
 // #[account]
 // #[derive(InitSpace)]
 // #[derive(Debug)]
@@ -223,37 +253,32 @@ pub const IRMA: StableState = StableState {
     active: false, // IRMA cannot be a reserve backing of itself
     extra: [0; 7], // padding
 };
-
+/*
 #[derive(Accounts)]
 pub struct Init<'info> {
-    #[account(init, space=32 + 8 + size_of::<StableState>()*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+        #[account(init, space=32 + 8 + size_of::<StableState>()*MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
     pub state: Account<'info, StateMap>,
     #[account(mut)]
     pub irma_admin: Signer<'info>,
-    #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct Common<'info> {
-    #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, StateMap>,
     #[account(mut)]
+    pub state: Account<'info, StateMap>,
     pub trader: Signer<'info>,
-    #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct Maint<'info> {
-    #[account(mut, seeds=[b"state".as_ref()], bump)]
-    pub state: Account<'info, StateMap>,
     #[account(mut)]
+    pub state: Account<'info, StateMap>,
     pub irma_admin: Signer<'info>,
-    #[account(address = system_program::ID)]
     pub system_program: Program<'info, System>,
 }
-
+*/
 impl StableState {
 
     pub fn new(symbol: &str, mint_address: prelude::Pubkey, backing_decimals: u64) -> Result<Self> {

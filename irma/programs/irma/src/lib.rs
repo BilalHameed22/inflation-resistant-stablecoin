@@ -1,212 +1,316 @@
+// In programs/irma/src/lib.rs
 #![allow(unexpected_cfgs)]
-#[cfg(feature = "idl-build")]
-// #![feature(trivial_bounds)]
-// use std::cmp::{
-//     PartialEq,
-//     Eq,
-// };
-// use bytemuck::{
-//     Pod,
-// };
-
-use anchor_lang::prelude::AccountInfo;
-use anchor_lang::prelude::Context;
-// use anchor_lang::prelude::CpiContext;
-use anchor_lang::prelude::msg;
-use anchor_lang::prelude::Program;
-use anchor_lang::prelude::Pubkey;
-use anchor_lang::prelude::Rent;
-use anchor_lang::prelude::Signer;
-use anchor_lang::prelude::System;
 
 use anchor_lang::prelude::*;
-
-use anchor_lang::{
-    account,
-    Accounts,
-    // AnchorSerialize, 
-    // AnchorDeserialize, 
-    declare_id,
-    // declare_program,
-    // Discriminator,
-    // program,
-    // Pubkey,
-    // require_keys_neq,
-    Result,
-    // ToAccountMetas,
-    solana_program,
-    system_program,
-    // zero_copy
-};
-// se anchor_lang::solana_program::clock::Clock;
-// use static_assertions::const_assert_eq;
-// use std::io::{Cursor, Read, Write};
+use anchor_lang::context::CpiContext;
+// use anchor_lang::prelude::borsh::{BorshSerialize, BorshDeserialize};
 use std::mem::size_of;
-use std::collections::BTreeMap;
-use solana_program::pubkey;
-// use borsh::BorshSerialize; // Add this import
+use std::str::FromStr;
 
+// Import the state structs from your modules, as they are used in the account definitions.
+use pricing::{StateMap, StableState};
 
-pub mod pricing;
+// declare_program!(dlmm);
+use commons::dlmm::borsh::*;
 
-use crate::pricing::*;
+// Declare your program's ID
+declare_id!("BqTQKeWmJ4btn3teLsvXTk84gpWUu5CMyGCmncptWfda");
 
-pub use crate::pricing::{StateMap, StableState, Init, Common, Maint};
+use anchor_lang::AccountDeserialize;
+use anchor_lang::AnchorDeserialize;
+use anchor_lang::InstructionData;
+use anchor_lang::ToAccountMetas;
+use bytemuck::Zeroable;
+use bytemuck::Pod;
 
-pub mod crank_market;
-pub mod iopenbook;
+use commons::dlmm::types::{Bin, UserRewardInfo};
+use commons::dlmm::errors::Error;
+use commons::dlmm::constants::MAX_BIN_PER_ARRAY;
+use commons::dlmm::accounts::*;
 
-use crate::crank_market::{
-    crank_market,
-};
+// impl Zeroable {
+//     fn zeroed() -> Self {
+//         Self {
+//             liquidity: 0,
+//             fee_growth_inside_x: 0,
+//             fee_growth_inside_y: 0,
+//             reward_growth_inside_x: 0,
+//             reward_growth_inside_y: 0,
+//             reward_owed_x: 0,
+//             reward_owed_y: 0,
+//         }
+//     }
+// }
 
+// impl Pod for Bin {}
 
-// use anchor_lang::prelude::{AccountInfo, CpiContext, Signer, AccountLoader, Program, Pubkey, AnchorDeserialize, AnchorSerialize};
-// pub const IRMA_ID: Pubkey = pubkey!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
-// declare_id!("8zs1JbqxqLcCXzBrkMCXyY2wgSW8uk8nxYuMFEfUMQa6");
-pub const IRMA_ID: Pubkey = pubkey!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
-declare_id!("4rVQnE69m14Qows2iwcgokb59nx7G49VD6fQ9GH9Y6KJ");
+#[macro_use]
 
-/// IRMA program
-/// Use OpenBook V2 to process events and update the IRMA state, including pricing.
-#[program]
-pub mod irma {
-    use super::*;
+#[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
+pub enum MarketMakingMode {
+    ModeRight,
+    ModeLeft,
+    ModeBoth,
+    ModeView,
+}
 
-    /// This is a one-time operation that sets up the IRMA pricing module.
-    /// Assume that the markets for the initial IRMA / reserve stablecoin pairs already exist.
-    /// This iniatializes only the pricing module for the intial stablecoin reserves, nothing else.
-    /// The "Init" data is allocated in a data account that is owned by the IRMA program.
-    /// The data is pre-allocated before the call, but empty.
-    pub fn initialize(ctx: Context<Init>) -> Result<()> {
-        crate::pricing::init_pricing(ctx)
-    }
-
-    /// Add a new stablecoin to the reserves.
-    /// This is a permissioned instruction that can only be called by the IRMA program owner.
-    /// The minimum requirement is that the stablecoin has 100M circulating supply and is not a meme coin.
-    /// IRMA relies on pre-existing network effects of each of the reserve stablecoins.
-    pub fn add_reserve(ctx: Context<Maint>, symbol: String, mint_address: Pubkey, decimals: u8) -> Result<()> {
-        msg!("Add stablecoin entry, size of StateMap: {}", size_of::<StateMap>());
-        crate::pricing::add_reserve(ctx, &symbol, mint_address, decimals)
-    }
-
-    /// Remove a stablecoin from the reserves by its symbol.
-    /// WARNING: This actually removes the stablecoin from the reserves, so be careful when using it.
-    /// In order to continue to avoid runs, all reserve amount must be redeemed before removing a stablecoin.
-    /// This can be done without using much capital: use 100K IRMAs to redeem another stablecoin (B),
-    /// then disable or deactivate the stablecoin to be removed (A), and then do a loop of
-    /// 1. internally swapping 100k of stablecoin B for stablecoin A, and then
-    /// 2. externally swapping 100k of stablecoin A for 100k of stablecoin B (open market).
-    pub fn remove_reserve(ctx: Context<Maint>, symbol: String) -> Result<()> {
-        crate::pricing::remove_reserve(ctx, &symbol)
-    }
-
-    /// Deactivate a reserve stablecoin.
-    /// Deactivating should still include the stablecoin in all calculations.
-    /// The only action that is disabled should be the minting of IRMA using this reserve stablecoin.
-    /// This is done in preparation for removing the stablecoin from the reserves.
-    /// For orderly removal, first announce separate dates of deactivation and removal.
-    pub fn disable_reserve(ctx: Context<Maint>, symbol: String) -> Result<()> {
-        crate::pricing::disable_reserve(ctx, &symbol)
-    }
-
-    // Crank the OpenBook V2 from client.
-    // This function is called periodically (at least once per slot) to process events and update the IRMA state.
-    // pub fn crank<'c: 'info, 'info>(ctx: Context<'_, '_, 'c, 'info, ConsumeEvents>) -> Result<()> {
-    pub fn crank(_dummy: Context<Maint>) -> Result<()> {
-        msg!("Crank..., ");
-        let slot;
-        #[cfg(not(test))]
-        {
-            msg!("Crank in test mode, mocking slot number...");
-            slot = 1223312; // Mock slot for testing
-        }
-        #[cfg(test)]
-        {
-            slot = Clock::get()?.slot;
-        }
-        msg!("Current slot: {}", slot);
-
-        // Create a buffer for StateMap and wrap it in AccountInfo
-        let state_account = Pubkey::find_program_address(&[b"state".as_ref()], &IRMA_ID).0;
-        let lamports: &mut u64 = &mut Box::new(100000u64);
-        let mut state: StateMap = StateMap::new();
-        let _ = state.init_reserves(); // Add initial stablecoins to the state
-
-        // Prepare the account data with the correct discriminator
-        let mut state_data_vec: Vec<u8> = Vec::with_capacity(120*MAX_BACKING_COUNT);
-        state.try_serialize(&mut state_data_vec).unwrap();
-
-        let state_data: &mut Vec<u8> = &mut Box::new(state_data_vec);
-        let state_key: &mut Pubkey = &mut Box::new(state_account);
-        let owner: &Pubkey = &mut Box::new(IRMA_ID);
-        // msg!("StateMap pre-test account data: {:?}", state_data);
-        let state_account_info: AccountInfo<'_> = AccountInfo::new(
-            state_key,
-            false, // is_signer
-            true,  // is_writable
-            lamports,
-            state_data,
-            owner,
-            false,
-            0,
-        );
-        // msg!("StateMap account created: {:?}", state_account_info.key);
-        // msg!("StateMap owner: {:?}", owner);
-        // Use a mock Signer for testing purposes
-        // let signer_pubkey: &'info mut Pubkey = &mut Box::new(Pubkey::new_unique())); // causes ELF error!
-        let lamportsx: &mut u64 = &mut Box::new(0u64);
-        let data: &mut Vec<u8> = &mut Box::new(vec![]);
-        let system_id = system_program::ID;
-        let owner: &mut Pubkey =  &mut Box::new(system_id);
-        let signer_account_info: AccountInfo<'_> = AccountInfo::new(
-            owner, // signer_pubkey,
-            true, // is_signer
-            false, // is_writable
-            lamportsx,
-            data,
-            owner,
-            false,
-            0,
-        );
-        // Create AccountInfo for system_program
-        let sys_lamports: &mut u64 = &mut Box::new(0u64);
-        let sys_data: &mut Vec<u8> = &mut Box::new(vec![]);
-        let sys_owner: &mut Pubkey = &mut Box::new(Pubkey::default());
-        let sys_account_info: AccountInfo<'_> = AccountInfo::new(
-            &system_program::ID,
-            false, // is_signer
-            false, // is_writable
-            sys_lamports,
-            sys_data,
-            sys_owner,
-            true,
-            0,
-        );
-
-        let mut bumps = BTreeMap::<String, u8>::new();
-        bumps.insert("state".to_string(), 13u8);
-        bumps.insert("irma_admin".to_string(), 13u8);
-        bumps.insert("system_program".to_string(), 13u8);
-
-        let ctx = Context::<'_, '_, '_, '_, Maint<'_>> {
-            // Fill in the context with necessary accounts and data
-            // This is a placeholder, actual implementation will depend on the accounts structure
-            accounts: &mut Maint {
-                state: Account::try_from(&state_account_info).unwrap(),
-                irma_admin: Signer::try_from(&signer_account_info).unwrap(),
-                system_program: Program::try_from(&sys_account_info).unwrap(),
-            },
-            remaining_accounts: &[],
-            program_id: &IRMA_ID,
-            bumps,
-        };
-        
-        msg!("Cranking market...");
-        
-        crank_market(ctx, slot)
+impl Default for MarketMakingMode {
+    fn default() -> Self {
+        MarketMakingMode::ModeView
     }
 }
 
+impl FromStr for MarketMakingMode {
+    type Err = anchor_lang::error::Error;
 
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "moderight" => Ok(MarketMakingMode::ModeRight),
+            "modeleft" => Ok(MarketMakingMode::ModeLeft),
+            "modeboth" => Ok(MarketMakingMode::ModeBoth),
+            "modeview" => Ok(MarketMakingMode::ModeView),
+            _ => msg!("cannot get mode"),
+        }
+    }
+}
+
+// ====================================================================
+// START: DEFINE ALL INSTRUCTION ACCOUNT STRUCTS HERE
+// ====================================================================
+
+#[derive(Accounts)]
+pub struct Init<'info> {
+    // Note: We need to qualify MAX_BACKING_COUNT with its module
+    #[account(init, space=32 + 8 + size_of::<StableState>()*pricing::MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+    pub state: Account<'info, StateMap>,
+    #[account(mut)]
+    pub irma_admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Common<'info> {
+    #[account(mut)]
+    pub state: Account<'info, StateMap>,
+    pub trader: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Maint<'info> {
+    #[account(mut)]
+    pub state: Account<'info, StateMap>,
+    pub irma_admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/*
+#[derive(Accounts)]
+pub struct CreateOrcaPool<'info> {
+    #[account(init, payer = admin, space = 8 + 256)]
+    pub pool_state: Account<'info, OrcaPoolState>,
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct UpdatePoolState<'info> {
+    #[account(mut)]
+    pub pool_state: Account<'info, OrcaPoolState>,
+    #[account(mut)]
+    pub updater: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct GetPoolInfo<'info> {
+    pub pool_state: Account<'info, OrcaPoolState>,
+}
+
+#[derive(Accounts)]
+pub struct SimulateSwap<'info> {
+    pub pool_state: Account<'info, OrcaPoolState>,
+    #[account(mut)]
+    pub trader: Signer<'info>,
+}
+*/
+
+// ====================================================================
+// Token Operations Contexts
+// ====================================================================
+
+// #[derive(Accounts)]
+// pub struct MintIrma<'info> {
+//     #[account(
+//         seeds = [b"protocol_state"],
+//         bump = protocol_state.bump,
+//     )]
+//     pub protocol_state: Account<'info, ProtocolState>,
+    
+//     /// CHECK: Verified as SPL Token Mint via constraint
+//     #[account(
+//         mut,
+//         constraint = irma_mint.key() == protocol_state.token_a_mint,
+//     )]
+//     pub irma_mint: UncheckedAccount<'info>,
+    
+//     /// CHECK: Verified as SPL Token Mint via constraint
+//     #[account(
+//         constraint = usdc_mint.key() == protocol_state.token_b_mint,
+//     )]
+//     pub usdc_mint: UncheckedAccount<'info>,
+    
+//     /// CHECK: User's USDC token account
+//     #[account(mut)]
+//     pub user_usdc: UncheckedAccount<'info>,
+    
+//     /// CHECK: User's IRMA token account
+//     #[account(mut)]
+//     pub user_irma: UncheckedAccount<'info>,
+    
+//     /// CHECK: Protocol's USDC vault
+//     #[account(mut)]
+//     pub protocol_usdc_vault: UncheckedAccount<'info>,
+    
+//     #[account(mut)]
+//     pub user: Signer<'info>,
+    
+//     /// CHECK: This is a PDA used as mint authority
+//     #[account(
+//         seeds = [b"mint_authority"],
+//         bump,
+//     )]
+//     pub mint_authority: UncheckedAccount<'info>,
+    
+//     /// CHECK: SPL Token program
+//     pub token_program: UncheckedAccount<'info>,
+// }
+
+// #[derive(Accounts)]
+// pub struct RedeemIrma<'info> {
+//     #[account(
+//         seeds = [b"protocol_state"],
+//         bump = protocol_state.bump,
+//     )]
+//     pub protocol_state: Account<'info, ProtocolState>,
+    
+//     /// CHECK: Verified as SPL Token Mint via constraint
+//     #[account(
+//         mut,
+//         constraint = irma_mint.key() == protocol_state.token_a_mint,
+//     )]
+//     pub irma_mint: UncheckedAccount<'info>,
+    
+//     /// CHECK: Verified as SPL Token Mint via constraint
+//     #[account(
+//         constraint = usdc_mint.key() == protocol_state.token_b_mint,
+//     )]
+//     pub usdc_mint: UncheckedAccount<'info>,
+    
+//     /// CHECK: User's IRMA token account
+//     #[account(mut)]
+//     pub user_irma: UncheckedAccount<'info>,
+    
+//     /// CHECK: User's USDC token account
+//     #[account(mut)]
+//     pub user_usdc: UncheckedAccount<'info>,
+    
+//     /// CHECK: Protocol's USDC vault
+//     #[account(mut)]
+//     pub protocol_usdc_vault: UncheckedAccount<'info>,
+    
+//     #[account(mut)]
+//     pub user: Signer<'info>,
+    
+//     /// CHECK: This is a PDA used as vault authority
+//     #[account(
+//         seeds = [b"vault_authority"],
+//         bump,
+//     )]
+//     pub vault_authority: UncheckedAccount<'info>,
+    
+//     /// CHECK: SPL Token program
+//     pub token_program: UncheckedAccount<'info>,
+// }
+
+// #[derive(Accounts)]
+// pub struct RemoveFreezeAuthority<'info> {
+//     /// CHECK: The IRMA mint
+//     #[account(mut)]
+//     pub irma_mint: UncheckedAccount<'info>,
+    
+//     /// CHECK: The PDA that is currently the freeze authority
+//     #[account(
+//         seeds = [b"mint_authority"],
+//         bump,
+//     )]
+//     pub freeze_authority: UncheckedAccount<'info>,
+    
+//     /// The authority that can invoke the freeze authority removal
+//     pub authority: Signer<'info>,
+    
+//     /// CHECK: SPL Token program (or Token2022)
+//     pub token_program: UncheckedAccount<'info>,
+// }
+
+// ====================================================================
+// END: ACCOUNT STRUCT DEFINITIONS
+// ====================================================================
+
+// Declare your modules
+pub mod pair_config;
+// pub mod bin_array;
+pub mod bin_array_manager;
+pub mod meteora_integration;
+pub mod pricing;
+pub mod position_manager;
+// pub mod utils;
+// pub mod u64x64_math;
+// pub mod bin;
+// pub mod position;
+// pub mod math;
+// pub mod u128x128_math;
+// pub mod pda;
+// pub mod token_2022;
+
+#[program]
+pub mod irma {
+    use super::*; // This will now correctly bring Init, Maint, Common, etc. into scope
+
+    pub fn initialize(ctx: Context<Init>) -> Result<()> {
+        pricing::init_pricing(ctx)
+    }
+
+    pub fn add_reserve(ctx: Context<Maint>, symbol: String, mint_address: Pubkey, decimals: u8) -> Result<()> {
+        msg!("Add stablecoin entry, size of StateMap: {}", size_of::<StateMap>());
+        pricing::add_reserve(ctx, &symbol, mint_address, decimals)
+    }
+
+    pub fn remove_reserve(ctx: Context<Maint>, symbol: String) -> Result<()> {
+        pricing::remove_reserve(ctx, &symbol)
+    }
+
+    pub fn disable_reserve(ctx: Context<Maint>, symbol: String) -> Result<()> {
+        pricing::disable_reserve(ctx, &symbol)
+    }
+
+    pub fn get_redemption_price(ctx: Context<Common>, quote_token: String) -> Result<f64> {
+        pricing::get_redemption_price(ctx, &quote_token)
+    }
+
+    pub fn get_prices(ctx: Context<Common>, quote_token: String) -> Result<(f64, f64)> {
+        pricing::get_prices(ctx, &quote_token)
+    }
+
+    /// Let pricing know about a sale trade event
+    /// Note that IRMA is what we are selling (minting).
+    pub fn sale_trade_event(ctx: Context<Common>, bought_token: String, bought_amount: u64) -> Result<()> {
+        return pricing::mint_irma(ctx, &bought_token, bought_amount);
+    }
+
+    /// Let pricing know about a buy-back trade event
+    /// Note that IRMA is what we are buying (burning).
+    pub fn buy_trade_event(ctx: Context<Common>, sold_token: String, bought_amount: u64) -> Result<()> {
+        return pricing::redeem_irma(ctx, &sold_token, bought_amount);
+    }
+}
