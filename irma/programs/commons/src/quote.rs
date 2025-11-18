@@ -102,6 +102,8 @@ pub fn quote_exact_out<'a>(
         .pop()
         .ok_or("Pool out of liquidity").unwrap();
 
+        msg!("Quoting exact out, active bin array pubkey: {}", active_bin_array_pubkey);
+
         let mut active_bin_array = bin_arrays
             .get(&active_bin_array_pubkey)
             .cloned()
@@ -110,15 +112,20 @@ pub fn quote_exact_out<'a>(
         loop {
 
             if !active_bin_array.is_bin_id_within_range(lb_pair.active_id)? {
+                msg!("Active bin id {} not within bin array index {}", lb_pair.active_id, active_bin_array.index);
                 lb_pair.advance_active_bin(swap_for_y)?;
+                break;
             } else if amount_out == 0 {
                 break;
             }
+            msg!("Active bin id {} is in bin array index {}", lb_pair.active_id, active_bin_array.index);
 
             lb_pair.update_volatility_accumulator()?;
 
             let active_bin = active_bin_array.get_bin_mut(lb_pair.active_id)?;
             let price = active_bin.get_or_store_bin_price(lb_pair.active_id, lb_pair.bin_step)?;
+
+            msg!("--> result: active_id {}, price {}", lb_pair.active_id, price);
 
             if !active_bin.is_empty(!swap_for_y) {
                 let bin_max_amount_out = active_bin.get_max_amount_out(swap_for_y);
@@ -294,6 +301,13 @@ pub fn get_bin_array_pubkeys_for_swap(
             break;
         }
 
+        msg!(
+            "Getting bin array pubkeys for swap, start_bin_array_idx: {}, active_id: {}, increment: {}",
+            start_bin_array_idx,
+            lb_pair.active_id,
+            increment
+        );
+
         if lb_pair.is_overflow_default_bin_array_bitmap(start_bin_array_idx) {
             let Some(bitmap_extension) = bitmap_extension else {
                 msg!("Out of search range. No extension.");
@@ -316,6 +330,7 @@ pub fn get_bin_array_pubkeys_for_swap(
             let Ok((next_bin_array_idx, has_liquidity)) = lb_pair
                 .next_bin_array_index_with_liquidity_internal(swap_for_y, start_bin_array_idx)
             else {
+                msg!("next bin array idx and has liquidity not set, exiting loop");
                 break;
             };
             if has_liquidity {
@@ -325,6 +340,7 @@ pub fn get_bin_array_pubkeys_for_swap(
                 // Switch to external bitmap
                 start_bin_array_idx = next_bin_array_idx;
             }
+            msg!("-----> next_bin_array_idx = {}, has_liquidity {}", next_bin_array_idx, has_liquidity);
         }
     }
 

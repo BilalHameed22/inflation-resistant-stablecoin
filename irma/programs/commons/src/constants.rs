@@ -114,5 +114,9 @@ pub enum CustomError {
     #[msg("Cannot get binarray")]
     CannotGetBinArray,
     #[msg("Bin is not within the position")]
-    BinIsNotWithinThePosition
+    BinIsNotWithinThePosition,
+    #[msg("Account data too small")]
+    AccountDataTooSmall,
+    #[msg("Bin id does not belong to this bin array")]
+    BinIdDoesNotBelongToThisBinArray,
 }

@@ -282,10 +282,13 @@ impl LbPairExtension for LbPair {
             let offset_bit_map = // bitmap after shifting left
                 bin_array_bitmap.shl(bitmap_range.checked_sub(array_offset).ok_or("overflow").unwrap());
 
+            msg!("offset bitmap is ");
             if offset_bit_map.eq(&U1024::ZERO) {
+                msg!("    zero");
                 return Ok((min_bitmap_id.checked_sub(1).ok_or("overflow").unwrap(), false));
             } else {
                 let next_bit = offset_bit_map.leading_zeros();
+                msg!("    non-zero, next_bit = {}", next_bit);
                 return Ok((
                     start_array_index
                         .checked_sub(next_bit as i32)

@@ -47,7 +47,8 @@ const dlmm_ID: Pubkey = commons::dlmm::ID;
 
 // Meteora Core (taken from Meteora DLMM SDK and adapted for IRMA)
 // Removed all RPC stuff because this is going to run on-chain.
-pub struct Core<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Item = AccountInfo<'a>> + bytemuck::Pod> {
+// <'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Item = AccountInfo<'a>> + bytemuck::Pod>
+pub struct Core {
     // pub context: &'a mut Context<'a, 'a, 'a, 'a, T>, // contains wallet and owner
     // pub wallet: Signer<'a>, // Option<Keypair>,
     // pub owner: Pubkey,
@@ -55,7 +56,7 @@ pub struct Core<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + I
     pub state: AllPosition,
 }
 
-impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Item = AccountInfo<'a>> + bytemuck::Pod> Core<'a, T> {
+impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Item = AccountInfo<'a>> + bytemuck::Pod> Core {
     fn get_account_and_deserialize(
         &self,
         context: &'a mut Context<'a, 'a, 'a, 'a, T>,
@@ -70,15 +71,17 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         Ok(data)
     }
 
-    pub fn refresh_state(&self, context: &'a Context<'a, 'a, 'a, 'a, T>) -> Result<()> {
+    pub fn refresh_state(&self, context: &'a mut Context<'a, 'a, 'a, 'a, LbPair>) -> Result<()> {
         // self.context = context;
 
         for pair in self.config.iter() {
             let pair_address =
                 Pubkey::from_str(&pair.pair_address).unwrap();
 
-            let lb_pair_state = self.get_account_and_deserialize(context, &pair_address, |account: AccountInfo| {
-                    Ok(bytemuck::pod_read_unaligned(&account.data))
+            let lb_pair = self.get_account_and_deserialize(context, &pair_address, |account: AccountInfo| {
+                    Ok(bytemuck::pod_read_unaligned(account.data.borrow().get(8..).ok_or(
+                        Error::from(CustomError::AccountDataTooSmall)
+                    )?))
                 })?;
 
             // get all position with an user
@@ -98,7 +101,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
             let mut position_key_with_state = position_accounts
                 .into_iter()
-                .map(|(key, account)| {
+                .map(|(key, account): (_, _)| {
                     let position: PositionV2 = bytemuck::pod_read_unaligned(&account.data[8..]);
                     (key, position)
                 })
@@ -150,7 +153,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             let mut all_state = self.state; // .lock().unwrap();
             let state = all_state.all_positions.get_mut(&pair_address).unwrap();
 
-            state.lb_pair_state = Some(lb_pair_state);
+            state.lb_pair = Some(lb_pair);
             state.bin_arrays = bin_arrays;
             state.position_pks = position_pks;
             state.positions = positions;
@@ -192,7 +195,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         let mut token_mints_with_program = vec![];
 
         for (_, position) in state.all_positions.iter() {
-            let lb_pair = &position.lb_pair_state.context("Missing lb pair state")?;
+            let lb_pair = &position.lb_pair.context("Missing lb pair state")?;
             let [token_x_program, token_y_program] = lb_pair.get_token_programs()?;
             token_mints_with_program.push((lb_pair.token_x_mint, token_x_program));
             token_mints_with_program.push((lb_pair.token_y_mint, token_y_program));
@@ -239,16 +242,16 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         let (event_authority, _bump) = derive_event_authority_pda();
 
         let lb_pair = state.lb_pair;
-        let lb_pair_state = state.lb_pair_state?; // .context("Missing lb pair state")?;
+        let lb_pair = state.lb_pair?; // .context("Missing lb pair state")?;
 
-        let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
+        let [token_x_program, token_y_program] = lb_pair.get_token_programs()?;
 
         let mut remaining_account_info = RemainingAccountsInfo { slices: vec![] };
         let mut transfer_hook_remaining_accounts = vec![];
 
         if let Some((slices, remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
-                &lb_pair_state,
+                &lb_pair,
                 &remaining_account_info.slices,
                 ActionType::Liquidity,
             )?
@@ -265,13 +268,13 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
             let user_token_x = get_associated_token_address_with_program_id(
                 &payer.pubkey(),
-                &lb_pair_state.token_x_mint,
+                &lb_pair.token_x_mint,
                 &token_x_program,
             );
 
             let user_token_y = get_associated_token_address_with_program_id(
                 &payer.pubkey(),
-                &lb_pair_state.token_y_mint,
+                &lb_pair.token_y_mint,
                 &token_y_program,
             );
 
@@ -283,10 +286,10 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
                 bin_array_bitmap_extension: Some(dlmm_ID),
                 user_token_x,
                 user_token_y,
-                reserve_x: lb_pair_state.reserve_x,
-                reserve_y: lb_pair_state.reserve_y,
-                token_x_mint: lb_pair_state.token_x_mint,
-                token_y_mint: lb_pair_state.token_y_mint,
+                reserve_x: lb_pair.reserve_x,
+                reserve_y: lb_pair.reserve_y,
+                token_x_mint: lb_pair.token_x_mint,
+                token_y_mint: lb_pair.token_y_mint,
                 sender: payer.pubkey(),
                 token_x_program,
                 token_y_program,
@@ -326,10 +329,10 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
                 sender: payer.pubkey(),
                 event_authority,
                 program: dlmm_ID,
-                reserve_x: lb_pair_state.reserve_x,
-                reserve_y: lb_pair_state.reserve_y,
-                token_x_mint: lb_pair_state.token_x_mint,
-                token_y_mint: lb_pair_state.token_y_mint,
+                reserve_x: lb_pair.reserve_x,
+                reserve_y: lb_pair.reserve_y,
+                token_x_mint: lb_pair.token_x_mint,
+                token_y_mint: lb_pair.token_y_mint,
                 token_program_x: token_x_program,
                 token_program_y: token_y_program,
                 memo_program: spl_memo::ID,
@@ -404,8 +407,8 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
     ) -> Result<Option<SwapEvent>> {
         // let rpc_client = self.rpc_client();
 
-        let lb_pair_state = state.lb_pair_state?; // .context("Missing lb pair state")?;
-        let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
+        let lb_pair = state.lb_pair?; // .context("Missing lb pair state")?;
+        let [token_x_program, token_y_program] = lb_pair.get_token_programs()?;
         let lb_pair = state.lb_pair;
 
         let payer = self.wallet.clone().context("Requires keypair")?;
@@ -429,7 +432,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
         let bin_arrays_account_meta = get_bin_array_pubkeys_for_swap(
             lb_pair,
-            &lb_pair_state,
+            &lb_pair,
             bin_array_bitmap_extension_state.as_ref(),
             swap_for_y,
             3,
@@ -442,12 +445,12 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             (
                 get_associated_token_address_with_program_id(
                     &payer.pubkey(),
-                    &lb_pair_state.token_x_mint,
+                    &lb_pair.token_x_mint,
                     &token_x_program,
                 ),
                 get_associated_token_address_with_program_id(
                     &payer.pubkey(),
-                    &lb_pair_state.token_y_mint,
+                    &lb_pair.token_y_mint,
                     &token_y_program,
                 ),
             )
@@ -455,12 +458,12 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             (
                 get_associated_token_address_with_program_id(
                     &payer.pubkey(),
-                    &lb_pair_state.token_y_mint,
+                    &lb_pair.token_y_mint,
                     &token_y_program,
                 ),
                 get_associated_token_address_with_program_id(
                     &payer.pubkey(),
-                    &lb_pair_state.token_x_mint,
+                    &lb_pair.token_x_mint,
                     &token_x_program,
                 ),
             )
@@ -471,7 +474,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
-                &lb_pair_state,
+                &lb_pair,
                 &remaining_accounts_info,
                 ActionType::Liquidity,
             )?
@@ -486,16 +489,16 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         let main_accounts = dlmm::client::accounts::Swap2 {
             lb_pair,
             bin_array_bitmap_extension: Some(bin_array_bitmap_extension),
-            reserve_x: lb_pair_state.reserve_x,
-            reserve_y: lb_pair_state.reserve_y,
-            token_x_mint: lb_pair_state.token_x_mint,
-            token_y_mint: lb_pair_state.token_y_mint,
+            reserve_x: lb_pair.reserve_x,
+            reserve_y: lb_pair.reserve_y,
+            token_x_mint: lb_pair.token_x_mint,
+            token_y_mint: lb_pair.token_y_mint,
             token_x_program,
             token_y_program,
             user: payer.pubkey(),
             user_token_in,
             user_token_out,
-            oracle: lb_pair_state.oracle,
+            oracle: lb_pair.oracle,
             host_fee_in: Some(dlmm_ID),
             event_authority,
             program: dlmm_ID,
@@ -632,18 +635,18 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         let (bin_array_lower, _bump) = derive_bin_array_pda(lb_pair, lower_bin_array_idx.into());
         let (bin_array_upper, _bump) = derive_bin_array_pda(lb_pair, upper_bin_array_idx.into());
 
-        let lb_pair_state = state.lb_pair_state?; // .context("Missing lb pair state")?;
-        let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
+        let lb_pair = state.lb_pair?; // .context("Missing lb pair state")?;
+        let [token_x_program, token_y_program] = lb_pair.get_token_programs()?;
 
         let user_token_x = get_associated_token_address_with_program_id(
             &payer.pubkey(),
-            &lb_pair_state.token_x_mint,
+            &lb_pair.token_x_mint,
             &token_x_program,
         );
 
         let user_token_y = get_associated_token_address_with_program_id(
             &payer.pubkey(),
-            &lb_pair_state.token_y_mint,
+            &lb_pair.token_y_mint,
             &token_y_program,
         );
 
@@ -652,7 +655,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
-                &lb_pair_state,
+                &lb_pair,
                 &remaining_accounts_info.slices,
                 ActionType::Liquidity,
             )?
@@ -675,10 +678,10 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             sender: payer.pubkey(),
             event_authority,
             program: dlmm_ID,
-            reserve_x: lb_pair_state.reserve_x,
-            reserve_y: lb_pair_state.reserve_y,
-            token_x_mint: lb_pair_state.token_x_mint,
-            token_y_mint: lb_pair_state.token_y_mint,
+            reserve_x: lb_pair.reserve_x,
+            reserve_y: lb_pair.reserve_y,
+            token_x_mint: lb_pair.token_x_mint,
+            token_y_mint: lb_pair.token_y_mint,
             user_token_x,
             user_token_y,
             token_x_program,
@@ -690,7 +693,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             liquidity_parameter: LiquidityParameterByStrategy {
                 amount_x,
                 amount_y,
-                active_id: lb_pair_state.active_id,
+                active_id: lb_pair.active_id,
                 max_active_bin_slippage: 3,
                 strategy_parameters: StrategyParameters {
                     min_bin_id: lower_bin_id,
@@ -738,22 +741,22 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         amount_x: u64,
         amount_y: u64,
     ) -> Result<(u64, u64)> {
-        let lb_pair_state = position.lb_pair_state?; // .context("Missing lb pair state")?;
+        let lb_pair = position.lb_pair?; // .context("Missing lb pair state")?;
 
         // let rpc_client = self.rpc_client();
         let payer = self.wallet.clone()?; // .context("Require keypair")?;
 
-        let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
+        let [token_x_program, token_y_program] = lb_pair.get_token_programs()?;
 
         let user_token_x = get_associated_token_address_with_program_id(
             &payer.pubkey(),
-            &lb_pair_state.token_x_mint,
+            &lb_pair.token_x_mint,
             &token_x_program,
         );
 
         let user_token_y = get_associated_token_address_with_program_id(
             &payer.pubkey(),
-            &lb_pair_state.token_y_mint,
+            &lb_pair.token_y_mint,
             &token_y_program,
         );
 
@@ -802,26 +805,26 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         for position in all_positions.iter() {
             let pair_config = get_pair_config(&self.config, position.lb_pair);
             // check whether out of price range
-            let lb_pair_state = &position.lb_pair_state.context("Missing lb pair state")?;
+            let lb_pair = &position.lb_pair.context("Missing lb pair state")?;
             if pair_config.mode == MarketMakingMode::ModeRight
-                && lb_pair_state.active_id > position.max_bin_id
+                && lb_pair.active_id > position.max_bin_id
             {
                 self.shift_right(&position)?;
                 self.inc_rebalance_time(position.lb_pair);
             }
 
             if pair_config.mode == MarketMakingMode::ModeLeft
-                && lb_pair_state.active_id < position.min_bin_id
+                && lb_pair.active_id < position.min_bin_id
             {
                 self.shift_left(&position)?;
                 self.inc_rebalance_time(position.lb_pair);
             }
 
             if pair_config.mode == MarketMakingMode::ModeBoth {
-                if lb_pair_state.active_id < position.min_bin_id {
+                if lb_pair.active_id < position.min_bin_id {
                     self.shift_left(&position)?;
                     self.inc_rebalance_time(position.lb_pair);
-                } else if lb_pair_state.active_id > position.max_bin_id {
+                } else if lb_pair.active_id > position.max_bin_id {
                     self.shift_right(&position)?;
                     self.inc_rebalance_time(position.lb_pair);
                 }
@@ -850,7 +853,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             .checked_div(2)?;
             // .error("math is overflow")?;
 
-        let lb_pair_state = &state.lb_pair_state;
+        let lb_pair = &state.lb_pair;
 
         let (amount_x, amount_y) = if amount_y_for_buy != 0 {
             msg!("swap {}", state.lb_pair);
@@ -866,11 +869,11 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
         // deposit again, just test with 1 position only
         msg!("deposit {}", state.lb_pair);
         match self
-            .deposit(state, amount_x, amount_y, lb_pair_state.active_id, false)
+            .deposit(state, amount_x, amount_y, lb_pair.active_id, false)
             
         {
             Err(_) => {
-                self.deposit(state, amount_x, amount_y, lb_pair_state.active_id, true)
+                self.deposit(state, amount_x, amount_y, lb_pair.active_id, true)
                     ?;
             }
             _ => {}
@@ -899,7 +902,7 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
             .checked_div(2)?;
             // .error("math is overflow")?;
 
-        let lb_pair_state = &state.lb_pair_state;
+        let lb_pair = &state.lb_pair;
 
         let (amount_x, amount_y) = if amount_x_for_sell != 0 {
             msg!("swap {}", state.lb_pair);
@@ -942,9 +945,9 @@ impl<'a, T: AccountSerialize + AccountDeserialize + Clone + Bumps + Iterator<Ite
 
         let mut position_infos = vec![];
         for position in all_positions.iter() {
-            let lb_pair_state = &position.lb_pair_state;
-            let x_decimals = get_decimals(lb_pair_state.token_x_mint, &tokens);
-            let y_decimals = get_decimals(lb_pair_state.token_y_mint, &tokens);
+            let lb_pair = &position.lb_pair;
+            let x_decimals = get_decimals(lb_pair.token_x_mint, &tokens);
+            let y_decimals = get_decimals(lb_pair.token_y_mint, &tokens);
             let position_raw = position.get_positions()?;
             position_infos.push(position_raw.to_position_info(x_decimals, y_decimals)?);
         }
