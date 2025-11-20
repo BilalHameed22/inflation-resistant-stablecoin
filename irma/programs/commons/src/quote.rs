@@ -370,7 +370,7 @@ mod tests {
         Ok(clock_state)
     }
 
-    #[tokio::test]
+    #[test]
     fn test_swap_quote_exact_out() {
         // RPC client. No gPA is required.
         // let rpc_client = RpcClient::new(Cluster::Mainnet.url().to_string());
@@ -480,7 +480,7 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test]
+    #[test]
     fn test_swap_quote_exact_in() {
         // RPC client. No gPA is required.
         // let rpc_client = RpcClient::new(Cluster::Mainnet.url().to_string());

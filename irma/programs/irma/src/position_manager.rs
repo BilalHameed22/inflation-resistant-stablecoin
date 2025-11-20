@@ -13,7 +13,7 @@ use anchor_spl::token_interface::Mint;
 use crate::bin_array_manager::BinArrayManager;
 use rust_decimal::{prelude::FromPrimitive, prelude::ToPrimitive, Decimal, MathematicalOps};
 use std::collections::HashMap;
-pub type MintWithProgramId = (Mint, Pubkey);
+use std::str::FromStr;
 
 use crate::pricing::{StateMap, StableState};
 use crate::pair_config::PairConfig;
@@ -30,6 +30,8 @@ use commons::position::*;
 use commons::{ONE, BASIS_POINT_MAX, SCALE_OFFSET};
 use commons::CustomError;
 
+pub type MintWithProgramId = (Mint, Pubkey);
+
 // Code below is from state.rs in Meteora SDK, adapted for our use case.
 
 pub struct AllPosition {
@@ -38,16 +40,16 @@ pub struct AllPosition {
 }
 
 impl AllPosition {
-    pub fn new(config: &Vec<PairConfig>) -> Self {
+    pub fn new(config: &Vec<PairConfig>) -> Result<Self> {
         let mut all_positions = HashMap::new();
         for pair in config.iter() {
-            let pool_pk = Pubkey::from(&pair.pair_address).unwrap();
+            let pool_pk = Pubkey::from_str(&pair.pair_address).unwrap();
             all_positions.insert(pool_pk, SinglePosition::new(pool_pk));
         }
-        AllPosition {
+        Ok(AllPosition {
             all_positions,
             tokens: HashMap::new(),
-        }
+        })
     }
 }
 

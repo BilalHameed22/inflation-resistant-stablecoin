@@ -119,4 +119,8 @@ pub enum CustomError {
     AccountDataTooSmall,
     #[msg("Bin id does not belong to this bin array")]
     BinIdDoesNotBelongToThisBinArray,
+    #[msg("Missing lb pair state")]
+    MissingLbPairState,
+    #[msg("Position not found")]
+    PositionNotFound,
 }
