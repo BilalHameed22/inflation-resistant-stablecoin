@@ -7,7 +7,7 @@ use anchor_lang::context::CpiContext;
 use std::mem::size_of;
 use std::str::FromStr;
 
-use crate::borsh::{BorshSerialize, BorshDeserialize};
+// use crate::borsh::{BorshSerialize, BorshDeserialize};
 
 // Import the state structs from your modules, as they are used in the account definitions.
 use pricing::{StateMap, StableState};
@@ -49,7 +49,7 @@ use commons::dlmm::accounts::*;
 
 #[macro_use]
 
-#[derive(Clone, Debug, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MarketMakingMode {
     ModeRight,
     ModeLeft,
