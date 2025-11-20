@@ -7,11 +7,13 @@ use anchor_lang::context::CpiContext;
 use std::mem::size_of;
 use std::str::FromStr;
 
+use crate::borsh::{BorshSerialize, BorshDeserialize};
+
 // Import the state structs from your modules, as they are used in the account definitions.
 use pricing::{StateMap, StableState};
 
 // declare_program!(dlmm);
-use commons::dlmm::borsh::*;
+// use commons::dlmm::borsh::*;
 
 // Declare your program's ID
 declare_id!("BqTQKeWmJ4btn3teLsvXTk84gpWUu5CMyGCmncptWfda");
@@ -24,7 +26,8 @@ use bytemuck::Zeroable;
 use bytemuck::Pod;
 
 use commons::dlmm::types::{Bin, UserRewardInfo};
-use commons::dlmm::errors::Error;
+// use commons::dlmm::errors::Error;
+use crate::error::Error;
 use commons::dlmm::constants::MAX_BIN_PER_ARRAY;
 use commons::dlmm::accounts::*;
 
@@ -69,7 +72,7 @@ impl FromStr for MarketMakingMode {
             "modeleft" => Ok(MarketMakingMode::ModeLeft),
             "modeboth" => Ok(MarketMakingMode::ModeBoth),
             "modeview" => Ok(MarketMakingMode::ModeView),
-            _ => msg!("cannot get mode"),
+            _ => Ok(MarketMakingMode::default()),
         }
     }
 }

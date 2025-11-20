@@ -18,7 +18,8 @@ pub type MintWithProgramId = (Mint, Pubkey);
 use crate::pricing::{StateMap, StableState};
 use crate::pair_config::PairConfig;
 use crate::meteora_integration::*;
-use commons::dlmm::errors::Error;
+use crate::Error;
+// use commons::dlmm::errors::Error;
 use commons::dlmm::accounts::*;
 use commons::dlmm::types::Bin;
 use commons::dlmm::accounts::{LbPair, PositionV2};
@@ -26,6 +27,8 @@ use commons::dlmm::constants::*;
 use commons::u64x64_math::pow;
 use commons::bin::*;
 use commons::position::*;
+use commons::{ONE, BASIS_POINT_MAX, SCALE_OFFSET};
+use commons::CustomError;
 
 // Code below is from state.rs in Meteora SDK, adapted for our use case.
 
@@ -74,7 +77,7 @@ impl SinglePosition {
         amount_in: u64,
         swap_for_y: bool,
     ) -> Result<u64> {
-        let lb_pair_state = self.lb_pair_state.as_ref().ok_or(Error("Lb pair state not found"))?;
+        let lb_pair_state = self.lb_pair_state.unwrap(); // as_ref().ok_or(Error::from(CustomError::LbPairStateNotFound))?;
         let price = PositionRaw::get_price_from_id(lb_pair_state.active_id, lb_pair_state.bin_step)?;
         let out_amount = Bin::get_amount_out(amount_in, price, swap_for_y)?;
 
@@ -105,7 +108,7 @@ impl SinglePosition {
                 let bin_array_state = self
                     .bin_arrays
                     .get(&key)
-                    .ok_or(Error("Cannot get binarray"))?;
+                    .ok_or(Error::from(CustomError::CannotGetBinArray))?;
                 bin_arrays.push(*bin_array_state);
             }
 
@@ -116,28 +119,28 @@ impl SinglePosition {
             for (i, liquidity_share) in position.liquidity_shares.iter().enumerate() {
                 let bin_id = position
                     .lower_bin_id
-                    .checked_add(i as i32);
+                    .checked_add(i as i32).unwrap();
 
                 let bin = bin_array_manager.get_bin(bin_id)?;
                 let (bin_amount_x, bin_amount_y) = bin.calculate_out_amount(*liquidity_share)?;
 
                 amount_x = amount_x
-                    .checked_add(bin_amount_x);
+                    .checked_add(bin_amount_x).unwrap();
 
                 amount_y = amount_y
-                    .checked_add(bin_amount_y);
+                    .checked_add(bin_amount_y).unwrap();
             }
 
             let (fee_x_pending, fee_y_pending) =
                 bin_array_manager.get_total_fee_pending(position)?;
 
             fee_x = fee_x
-                .checked_add(fee_x_pending);
+                .checked_add(fee_x_pending).unwrap();
             fee_y = fee_y
-                .checked_add(fee_y_pending);
+                .checked_add(fee_y_pending).unwrap();
         }
 
-        let lb_pair_state = self.lb_pair_state;
+        let lb_pair_state = self.lb_pair_state.unwrap();
 
         Ok(PositionRaw {
             position_len: self.positions.len(),
@@ -186,30 +189,30 @@ impl PositionRaw {
 
         let min_price_fp = PositionRaw::get_price_from_id(self.min_bin_id, bin_step)?;
         let min_price =
-            Decimal::from_u128(min_price_fp) / Decimal::from(ONE);
+            Decimal::from_u128(min_price_fp).unwrap() / Decimal::from(ONE);
         let adjusted_min_price = min_price
             .checked_mul(ui_price_adjustment_factor.into())
-            .context("Math is overflow")?
+            .unwrap()
             .to_f64()
-            .context("Math is overflow")?;
+            .unwrap();
 
         let max_price_fp = PositionRaw::get_price_from_id(self.max_bin_id, bin_step)?;
         let max_price =
-            Decimal::from_u128(max_price_fp) / Decimal::from(ONE);
+            Decimal::from_u128(max_price_fp).unwrap() / Decimal::from(ONE);
         let adjusted_max_price = max_price
             .checked_mul(ui_price_adjustment_factor.into())
-            .context("Math is overflow")?
+            .unwrap()
             .to_f64()
-            .context("Math is overflow")?;
+            .unwrap();
 
         let current_price_fp = PositionRaw::get_price_from_id(self.active_id, bin_step)?;
         let current_price =
-            Decimal::from_u128(current_price_fp).context("Math is overflow")? / Decimal::from(ONE);
+            Decimal::from_u128(current_price_fp).unwrap() / Decimal::from(ONE);
         let adjusted_current_price = current_price
             .checked_mul(ui_price_adjustment_factor.into())
-            .context("Math is overflow")?
+            .unwrap()
             .to_f64()
-            .context("Math is overflow")?;
+            .unwrap();
 
         let amount_x = self.amount_x as f64 / token_x_ui_adjustment_factor;
         let amount_y = self.amount_y as f64 / token_y_ui_adjustment_factor;
@@ -234,11 +237,13 @@ impl PositionRaw {
     pub fn get_price_from_id(active_id: i32, bin_step: u16) -> Result<u128> {
         let bps = u128::from(bin_step)
             .checked_shl(SCALE_OFFSET.into())
-            .checked_div(BASIS_POINT_MAX as u128);
+            .unwrap()
+            .checked_div(BASIS_POINT_MAX as u128)
+            .unwrap();
 
-        let base = ONE.checked_add(bps).context("overflow")?;
+        let base = ONE.checked_add(bps).unwrap();
 
-        pow(base, active_id)
+        Ok(pow(base, active_id).unwrap())
     }
 }
 

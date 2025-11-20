@@ -92,11 +92,13 @@ impl BinArrayBitmapExtExtension for BinArrayBitmapExtension {
         if bin_array_index > 0 {
             Ok(bin_array_index
                 .checked_rem(BIN_ARRAY_BITMAP_SIZE)
-                .context("overflow")? as usize)
+                .unwrap() as usize)
+                // .context("overflow")? as usize)
         } else {
             Ok((-(bin_array_index + 1))
                 .checked_rem(BIN_ARRAY_BITMAP_SIZE)
-                .context("overflow")? as usize)
+                .unwrap() as usize)
+                // .context("overflow")? as usize)
         }
     }
 
