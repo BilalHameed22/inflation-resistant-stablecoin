@@ -1,13 +1,15 @@
-use crate::MarketMakingMode;
+// use crate::MarketMakingMode;
 use crate::position_manager::*;
-use crate::Init;
+// use crate::Init;
 use commons::dlmm::accounts::*;
 use commons::dlmm::types::*;
 use commons::derive_event_authority_pda;
 use commons::get_matching_positions;
 use commons::*;
 use crate::pair_config::*;
-use crate::Maint;
+// use crate::Maint;
+use crate::{MarketMakingMode, Init, Maint, InitBumps, MaintBumps, StateMap};
+use crate::pricing::init_pricing;
 use commons::{BASIS_POINT_MAX, DEFAULT_BIN_PER_POSITION, MAX_BIN_PER_ARRAY};
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::Mint;
@@ -43,18 +45,21 @@ impl<T> AccountData<T> {
 
 // Meteora Core (taken from Meteora DLMM SDK and adapted for IRMA)
 // Removed all RPC stuff because this is going to run on-chain.
-pub struct Core<'a> {
-    // pub context: &'a mut Context<'a, 'a, 'a, 'a, T>, // contains wallet and owner
-    pub context: &'a mut Context<'a, 'a, 'a, 'a, Maint<'a>>,
-    // pub wallet: Signer<'a>, // Option<Keypair>,
+pub struct Core {
     pub owner: Pubkey,
     pub config: Vec<PairConfig>,
     pub state: AllPosition,
 }
 
-impl<'a> Core<'a> {
-    pub fn init_core(ctx: Context<Init>) -> Result<()> {
-        Ok(())
+impl Core {
+    pub fn new(ctx: Context<Init>, owner: Pubkey, config: Vec<PairConfig>, state: AllPosition) -> Self {
+        init_pricing(ctx);
+        
+        Core {
+            owner,
+            config,
+            state,
+        }
     }
 
     // Helper function to get current epoch time in seconds (on-chain version)
@@ -70,10 +75,10 @@ impl<'a> Core<'a> {
     //     &crate::ID, // Your program ID
     // );
     fn get_bytemuck_account<T: bytemuck::Pod>(
-        &self,
+        context: &Context<Maint>,
         pubkey: &Pubkey
     ) -> Result<T> {
-        let account_info = self.context.remaining_accounts.iter()
+        let account_info = context.remaining_accounts.iter()
             .find(|acc| acc.key == pubkey)
             .ok_or(CustomError::AccountNotFound)?;
         
@@ -82,12 +87,12 @@ impl<'a> Core<'a> {
     }
 
     fn get_multiple_bytemuck_accounts<T: bytemuck::Pod>(
-        &self,
+        context: &Context<Maint>,
         pubkeys: &Vec<Pubkey>
     ) -> Result<HashMap<Pubkey, Option<T>>> {
         let mut data = HashMap::new();
         for pubkey in pubkeys.iter() {
-            let account_info = self.context.remaining_accounts.iter()
+            let account_info = context.remaining_accounts.iter()
                 .find(|acc| acc.key == pubkey);
             if let Some(account_info) = account_info {
                 let account_data: T = bytemuck::pod_read_unaligned(&account_info.data.borrow()[8..]);
@@ -100,12 +105,12 @@ impl<'a> Core<'a> {
     }
 
     fn get_multiple_anchor_accounts<T: anchor_lang::AccountDeserialize>(
-        &self,
+        context: &Context<Maint>,
         pubkeys: &Vec<Pubkey>
     ) -> Result<HashMap<Pubkey, Option<T>>> {
         let mut data = HashMap::new();
         for pubkey in pubkeys.iter() {
-            let account_info = self.context.remaining_accounts.iter()
+            let account_info = context.remaining_accounts.iter()
                 .find(|acc| acc.key == pubkey);
             if let Some(account_info) = account_info {
                 let account_data = T::try_deserialize(&mut &account_info.data.borrow()[8..])?;
@@ -118,12 +123,11 @@ impl<'a> Core<'a> {
     }
 
     fn execute_meteora_instruction(
-        &self,
+        context: &Context<Maint>,
         instructions: Vec<Instruction>,
         sign: bool
     ) -> Result<()> {
-
-        let key = self.context.accounts.irma_admin.key();
+        let key = context.accounts.irma_admin.key();
         for instruction in instructions.iter() {
             if sign {
                 // If PDA signing needed - manually derive bump
@@ -136,10 +140,10 @@ impl<'a> Core<'a> {
                     key.as_ref(),
                     &[bump],
                 ];
-                invoke_signed(&instruction, self.context.remaining_accounts, &[seeds])?;
+                invoke_signed(&instruction, context.remaining_accounts, &[seeds])?;
             }
             else {
-                invoke(&instruction, self.context.remaining_accounts)?;
+                invoke(&instruction, context.remaining_accounts)?;
             }
         }
         Ok(())
@@ -148,7 +152,7 @@ impl<'a> Core<'a> {
 
 
 
-    pub fn refresh_state(&mut self) -> Result<()> {
+    pub fn refresh_state(&mut self, context: &Context<Maint>) -> Result<()> {
 
         for pair in self.config.iter() {
             let pair_address =
@@ -158,7 +162,7 @@ impl<'a> Core<'a> {
 
             // get all position with an user
             let mut position_key_with_state = get_matching_positions(
-                self.context.remaining_accounts,
+                context.remaining_accounts,
                 &self.owner, 
                 &pair_address
             ).unwrap();
@@ -197,7 +201,8 @@ impl<'a> Core<'a> {
                     .into_iter()
                     .collect::<Vec<_>>();
 
-                let bin_arrays_raw: HashMap::<Pubkey, Option<BinArray>> = self.get_multiple_bytemuck_accounts(&bin_array_keys)?;
+                let bin_arrays_raw: HashMap::<Pubkey, Option<BinArray>> 
+                                = Core::get_multiple_bytemuck_accounts(context, &bin_array_keys)?;
 
                 for (key, bin_array_option) in bin_arrays_raw.iter() {
                     if let Some(bin_array_state) = bin_array_option {
@@ -221,7 +226,7 @@ impl<'a> Core<'a> {
         Ok(())
     }
 
-    pub fn fetch_token_info(&mut self) -> Result<()> {
+    pub fn fetch_token_info(&mut self, context: &Context<Maint>) -> Result<()> {
         let token_mints_with_program = self.get_all_token_mints_with_program_id()?;
 
         let token_mint_keys = token_mints_with_program
@@ -229,7 +234,7 @@ impl<'a> Core<'a> {
             .map(|(key, _program_id)| *key)
             .collect::<Vec<_>>();
 
-        let accounts: HashMap<Pubkey, Option<Mint>> = self.get_multiple_anchor_accounts(&token_mint_keys)?;
+        let accounts: HashMap<Pubkey, Option<Mint>> = Core::get_multiple_anchor_accounts(context, &token_mint_keys)?;
         let mut tokens = HashMap::new();
 
         for ((_key, program_id), account) in token_mints_with_program.iter().zip(accounts) {
@@ -270,6 +275,7 @@ impl<'a> Core<'a> {
     // Helper function to get or create ATA on-chain
     fn get_or_create_ata(
         &self,
+        context: &Context<Maint>,
         token_mint: Pubkey,
         token_program: Pubkey,
         owner: &Pubkey,
@@ -282,7 +288,7 @@ impl<'a> Core<'a> {
         );
 
         // Check if ATA already exists in remaining_accounts
-        let ata_exists = self.context.remaining_accounts.iter()
+        let ata_exists = context.remaining_accounts.iter()
             .any(|acc| acc.key == &ata_address);
 
         if !ata_exists {
@@ -301,18 +307,19 @@ impl<'a> Core<'a> {
             };
 
             // Execute the instruction
-            self.execute_meteora_instruction(vec![create_ata_ix], true)?;
+            Core::execute_meteora_instruction(context, vec![create_ata_ix], true)?;
         }
 
         Ok(ata_address)
     }
 
     pub fn init_user_ata(
-        &self
+        &self, context: &Context<Maint>,
     ) -> Result<()> {
-        let wallet = &self.context.accounts.irma_admin;
+        let wallet = &context.accounts.irma_admin;
         for (token_mint, program_id) in self.get_all_token_mints_with_program_id()?.iter() {
             self.get_or_create_ata(
+                context,
                 *token_mint,
                 *program_id,
                 &wallet.key(),
@@ -326,6 +333,7 @@ impl<'a> Core<'a> {
     // withdraw all positions
     pub fn withdraw(
         &self,
+        context: &Context<Maint>,
         state: &SinglePosition
     ) -> Result<()> {
         if state.position_pks.len() == 0 {
@@ -334,7 +342,7 @@ impl<'a> Core<'a> {
 
         // let rpc_client = self.rpc_client();
 
-        let payer = self.context.accounts.irma_admin.clone();
+        let payer = context.accounts.irma_admin.clone();
 
         let (event_authority, _bump) = derive_event_authority_pda();
 
@@ -351,10 +359,9 @@ impl<'a> Core<'a> {
         if let Some((slices, remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                self.context.remaining_accounts,
+                context.remaining_accounts,
                 ActionType::Liquidity,
             )?
-            // .await?
         {
             remaining_account_info.slices = slices;
             transfer_hook_remaining_accounts = remaining_accounts;
@@ -482,7 +489,7 @@ impl<'a> Core<'a> {
 
             instructions.push(close_position_ix);
 
-            let _result = self.execute_meteora_instruction(instructions, true)?;
+            let _result = Core::execute_meteora_instruction(context, instructions, true)?;
             msg!("Close position {position} {result}");
         }
 
@@ -494,6 +501,7 @@ impl<'a> Core<'a> {
     // We may need this to overcome AMM behavior, in case off-chain swap is too slow.
     pub fn swap(
         &self,
+        context: &Context<Maint>,
         state: &SinglePosition,
         amount_in: u64,
         swap_for_y: bool
@@ -505,13 +513,13 @@ impl<'a> Core<'a> {
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
         let lb_pair = state.lb_pair;
 
-        let payer = self.context.accounts.irma_admin.clone();
+        let payer = context.accounts.irma_admin.clone();
 
         let (event_authority, _bump) = derive_event_authority_pda();
         let (bin_array_bitmap_extension, _bump) = derive_bin_array_bitmap_extension(lb_pair);
 
         let bitmap_extension: BinArrayBitmapExtension = 
-            self.get_bytemuck_account(&bin_array_bitmap_extension)?;
+            Core::get_bytemuck_account(context, &bin_array_bitmap_extension)?;
 
         let bin_arrays_account_meta = get_bin_array_pubkeys_for_swap(
             lb_pair,
@@ -558,10 +566,9 @@ impl<'a> Core<'a> {
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                self.context.remaining_accounts,
+                context.remaining_accounts,
                 ActionType::Liquidity,
             )?
-            // .await?
         {
             remaining_accounts_info.slices = slices;
             remaining_accounts.extend(transfer_hook_remaining_accounts);
@@ -608,7 +615,7 @@ impl<'a> Core<'a> {
 
         let instructions = [swap_ix];
 
-        let _result = self.execute_meteora_instruction(instructions.to_vec(), true)?;
+        let _result = Core::execute_meteora_instruction(context, instructions.to_vec(), true)?;
         msg!("Swap {amount_in} {swap_for_y} {result:?}");
 
         Ok(())
@@ -616,12 +623,13 @@ impl<'a> Core<'a> {
 
     pub fn deposit(
         &self,
+        context: &Context<Maint>,
         state: &SinglePosition,
         amount_x: u64,
         amount_y: u64,
         active_id: i32
     ) -> Result<()> {
-        let payer = self.context.accounts.irma_admin.clone();
+        let payer = context.accounts.irma_admin.clone();
 
         // let rpc_client = self.rpc_client();
         let lower_bin_id = active_id - (MAX_BIN_PER_ARRAY as i32).checked_div(2).unwrap();
@@ -647,7 +655,7 @@ impl<'a> Core<'a> {
             // Initialize bin array if not exists
             let (bin_array, _bump) = derive_bin_array_pda(lb_pair, idx.into());
 
-            if self.get_bytemuck_account::<BinArray>(&bin_array).is_err() {
+            if Core::get_bytemuck_account::<BinArray>(context, &bin_array).is_err() {
                 let accounts = dlmm::client::accounts::InitializeBinArray {
                     bin_array,
                     funder: payer.key(),
@@ -731,10 +739,9 @@ impl<'a> Core<'a> {
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                self.context.remaining_accounts,
+                context.remaining_accounts,
                 ActionType::Liquidity,
             )?
-            // .await?
         {
             remaining_accounts_info.slices = slices;
             remaining_accounts.extend(transfer_hook_remaining_accounts);
@@ -796,7 +803,7 @@ impl<'a> Core<'a> {
 
         instructions.push(instruction);
 
-        let _result = self.execute_meteora_instruction(instructions, true)?;
+        let _result = Core::execute_meteora_instruction(context, instructions, true)?;
         msg!("deposit {amount_x} {amount_y} {_result}");
 
         Ok(())
@@ -804,6 +811,7 @@ impl<'a> Core<'a> {
 
     pub fn get_deposit_amount(
         &self,
+        context: &Context<Maint>,
         position: &SinglePosition,
         amount_x: u64,
         amount_y: u64,
@@ -813,7 +821,7 @@ impl<'a> Core<'a> {
             )?;
 
         // let rpc_client = self.rpc_client();
-        let payer = self.context.accounts.irma_admin.clone();
+        let payer = context.accounts.irma_admin.clone();
 
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
 
@@ -829,7 +837,8 @@ impl<'a> Core<'a> {
             &token_y_program,
         );
 
-        let accounts: HashMap<Pubkey, Option<TokenAccount>> = self.get_multiple_anchor_accounts(&vec![user_token_x, user_token_y])?;
+        let accounts: HashMap<Pubkey, Option<TokenAccount>> 
+                = Core::get_multiple_anchor_accounts(context, &vec![user_token_x, user_token_y])?;
 
         let user_token_x_state = accounts.get(&user_token_x).unwrap().as_ref().unwrap();
         let user_token_y_state = accounts.get(&user_token_y).unwrap().as_ref().unwrap();
@@ -865,6 +874,162 @@ impl<'a> Core<'a> {
         state.tokens.clone()
     }
 
+    pub fn check_shift_price_range(
+        &mut self,
+        context: &mut Context<Maint>
+    ) -> Result<()> {
+        let all_positions = self.get_all_positions();
+        for position in all_positions.iter() {
+            let pair_config = get_pair_config(&self.config, position.lb_pair);
+            // check whether out of price range
+            let lb_pair = &position.lb_pair_state.as_ref().ok_or(
+                Error::from(CustomError::MissingLbPairState)
+            )?;
+            if pair_config.mode == MarketMakingMode::ModeRight
+                && lb_pair.active_id > position.max_bin_id
+            {
+                self.shift_right(context, &position)?;
+                self.inc_rebalance_time(position.lb_pair);
+            }
+
+            if pair_config.mode == MarketMakingMode::ModeLeft
+                && lb_pair.active_id < position.min_bin_id
+            {
+                self.shift_left(context, &position)?;
+                self.inc_rebalance_time(position.lb_pair);
+            }
+
+            if pair_config.mode == MarketMakingMode::ModeBoth {
+                if lb_pair.active_id < position.min_bin_id {
+                    self.shift_left(context, &position)?;
+                    self.inc_rebalance_time(position.lb_pair);
+                } else if lb_pair.active_id > position.max_bin_id {
+                    self.shift_right(context, &position)?;
+                    self.inc_rebalance_time(position.lb_pair);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn shift_right(
+        &mut self,
+        context: &mut Context<Maint>,
+        state: &SinglePosition
+    ) -> Result<()> {
+        let pair_config = get_pair_config(&self.config, state.lb_pair);
+        // validate that y amount is zero
+        msg!("shift right {}", state.lb_pair);
+        let position = state.get_positions()?;
+        if position.amount_x != 0 {
+            return Err(Error::from(CustomError::AmountXNotZero));
+        }
+
+        msg!("withdraw {}", state.lb_pair);
+        // withdraw
+        self.withdraw(context, state)?;
+
+        // buy base
+        let amount_y_for_buy = position
+            .amount_y
+            .checked_div(2)
+            .unwrap();
+
+        let Some(lb_pair_state) = &state.lb_pair_state else {
+            return Err(Error::from(CustomError::MissingLbPairState));
+        };
+
+        let (amount_x, amount_y) = if amount_y_for_buy != 0 {
+            msg!("swap {}", state.lb_pair);
+            let swap_event = self.swap(context, state, amount_y_for_buy, false).unwrap();
+            msg!("TODO: swap event processing {:?}", swap_event);
+            (
+                position.amount_x, // swap_event.map(|e| e.amount_out).unwrap_or_default(),
+                position.amount_y - amount_y_for_buy
+            )
+        } else {
+            (pair_config.x_amount, pair_config.y_amount)
+        };
+
+        // deposit again, just test with 1 position only
+        msg!("deposit {}", state.lb_pair);
+        match self
+            .deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)
+        {
+            Err(_) => {
+                self.deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)?;
+            }
+            _ => {}
+        }
+        msg!("refresh state {}", state.lb_pair);
+        // fetch positions again
+        self.refresh_state(context)?;
+        Ok(())
+    }
+
+    fn shift_left(
+        &mut self,
+        context: &mut Context<Maint>,
+        state: &SinglePosition
+    ) -> Result<()> {
+        let pair_config = get_pair_config(&self.config, state.lb_pair);
+        msg!("shift left {}", state.lb_pair);
+        // validate that y amount is zero
+        let position = state.get_positions()?;
+        if position.amount_y != 0 {
+            return Err(Error::from(CustomError::AmountYNotZero));
+        }
+        msg!("withdraw {}", state.lb_pair);
+        // withdraw
+        self.withdraw(context, state)?;
+
+        // sell base
+        let amount_x_for_sell = position
+            .amount_x
+            .checked_div(2)
+            .unwrap();
+
+        let Some(lb_pair_state) = &state.lb_pair_state else {
+            return Err(Error::from(CustomError::MissingLbPairState));
+        };
+
+        let (amount_x, amount_y) = if amount_x_for_sell != 0 {
+                msg!("swap {}", state.lb_pair);
+                let swap_event = self.swap(context, state, amount_x_for_sell, true).unwrap();
+                msg!("TODO: swap event processing {:?}", swap_event);
+                (
+                    position.amount_x - amount_x_for_sell,
+                    position.amount_y // swap_event.map(|e| e.amount_out).unwrap_or_default(),
+                )
+            } else {
+                (pair_config.x_amount, pair_config.y_amount)
+            };
+
+        // sanity check with real balances
+        let (amount_x, amount_y) = self.get_deposit_amount(context, state, amount_x, amount_y)?;
+        msg!("deposit {}", state.lb_pair);
+        match self
+            .deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)
+        {
+            Err(_) => {
+                self.deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)?;
+            }
+            _ => {}
+        }
+
+        msg!("refresh state {}", state.lb_pair);
+        // fetch positions again
+        self.refresh_state(context)?;
+        Ok(())
+    }
+
+    pub fn inc_rebalance_time(&mut self, lb_pair: Pubkey) {
+        if let Some(state) = self.state.all_positions.get_mut(&lb_pair) {
+            state.inc_rebalance_time();
+        }
+    }
+
     pub fn get_positions(&self) -> Result<Vec<PositionInfo>> {
         let all_positions = self.get_all_positions();
         let tokens = self.get_all_tokens();
@@ -880,48 +1045,6 @@ impl<'a> Core<'a> {
             position_infos.push(position_raw.to_position_info(x_decimals, y_decimals)?);
         }
         return Ok(position_infos);
-    }
-
-    pub fn check_shift_price_range(&self) -> Result<()> {
-        let all_positions = self.get_all_positions();
-        for position in all_positions.iter() {
-            let pair_config = get_pair_config(&self.config, position.lb_pair);
-            // check whether out of price range
-            let lb_pair = &position.lb_pair_state.as_ref().ok_or(
-                Error::from(CustomError::MissingLbPairState)
-            )?;
-            if pair_config.mode == MarketMakingMode::ModeRight
-                && lb_pair.active_id > position.max_bin_id
-            {
-                // self.shift_right(&position)?;
-                // self.inc_rebalance_time(position.lb_pair);
-            }
-
-            if pair_config.mode == MarketMakingMode::ModeLeft
-                && lb_pair.active_id < position.min_bin_id
-            {
-                // self.shift_left(&position)?;
-                // self.inc_rebalance_time(position.lb_pair);
-            }
-
-            if pair_config.mode == MarketMakingMode::ModeBoth {
-                if lb_pair.active_id < position.min_bin_id {
-                    // self.shift_left(&position)?;
-                    // self.inc_rebalance_time(position.lb_pair);
-                } else if lb_pair.active_id > position.max_bin_id {
-                    // self.shift_right(&position)?;
-                    // self.inc_rebalance_time(position.lb_pair);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn inc_rebalance_time(&mut self, lb_pair: Pubkey) {
-        if let Some(state) = self.state.all_positions.get_mut(&lb_pair) {
-            state.inc_rebalance_time();
-        }
     }
 }
 
