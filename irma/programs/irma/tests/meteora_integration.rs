@@ -5,10 +5,54 @@ mod core_test {
     use anchor_lang::prelude::*;
     use std::env;
     // use std::sync::Arc;
+    use irma::IRMA_ID;
     use irma::pair_config::PairConfig;
     use irma::position_manager::{AllPosition};
+    use irma::pricing::init_pricing;
+    use irma::pricing::MAX_BACKING_COUNT;
+    use irma::pricing::StateMap;
     use irma::meteora_integration::Core;
-    use irma::{MarketMakingMode, Init, Maint, InitBumps, CommonBumps, MaintBumps};
+    use irma::{MarketMakingMode, Init, Maint, InitBumps, MaintBumps};
+    use commons::dlmm::accounts::{LbPair, PositionV2};
+
+    // Helper function to create mock AccountInfo
+    fn create_mock_account_info<'a>(
+        key: &'a Pubkey,
+        lamports: &'a mut u64,
+        data: &'a mut [u8],
+        owner: &'a Pubkey,
+    ) -> AccountInfo<'a> {
+        AccountInfo::new(
+            key,
+            false, // is_signer
+            false, // is_writable  
+            lamports,
+            data,
+            owner,
+            false, // executable
+            0,     // rent_epoch
+        )
+    }
+
+    // Usage example:
+    // let mut position_data = vec![0u8; std::mem::size_of::<PositionV2>()];
+    // let mut lamports = 0u64;
+    // let position_pubkey = Pubkey::new_unique();
+    // let owner = Pubkey::new_unique();
+
+    // let position_account_info = create_mock_account_info(
+    //     &position_pubkey,
+    //     &mut lamports,
+    //     &mut position_data,
+    //     &owner,
+    // );
+
+    // Then use in remaining_accounts
+    // remaining_accounts: &[position_account_info],
+
+    fn allocate_state() -> StateMap {
+        StateMap::new()
+    }
 
     fn prep_accounts<'info>(owner: &'info Pubkey, state_account: Pubkey) -> (AccountInfo<'info>, AccountInfo<'info>, AccountInfo<'info>) {
         // Create a buffer for StateMap and wrap it in AccountInfo
@@ -37,7 +81,7 @@ mod core_test {
         // msg!("StateMap owner: {:?}", owner);
         // Use a mock Signer for testing purposes
         let signer_pubkey: &'info mut Pubkey 
-            = Box::leak(Box::new(Pubkey::from_str_const("68bjdGBTr4yRxLW56s7LvpQehMn9jBvaJvV134NQjpmP").unwrap()));
+            = Box::leak(Box::new(Pubkey::from_str_const("68bjdGBTr4yRxLW56s7LvpQehMn9jBvaJvV134NQjpmP")));
         let lamportsx: &'info mut u64 = Box::leak(Box::new(0u64));
         let data: &'info mut Vec<u8> = Box::leak(Box::new(vec![]));
         let owner: &'info mut Pubkey = Box::leak(Box::new(Pubkey::default()));
@@ -98,58 +142,63 @@ mod core_test {
 
     #[test]
     fn test_withdraw() {
-        let program_id: &'info Pubkey = &IRMA_ID;
+        let program_id: &Pubkey = &IRMA_ID;
         let (state_account, irma_admin_account, sys_account) 
                 = initialize_anchor(program_id);
-        // Bind to variables to extend their lifetime
-        let mut accounts: Init<'_> = Init {
+
+        let lp_pair = Pubkey::from_str_const("FoSDw2L5DmTuQTFe55gWPDXf88euaxAEKFre74CnvQbX");
+
+        let config = vec![PairConfig {
+            pair_address: lp_pair.to_string(),
+            x_amount: 17000000,
+            y_amount: 2000000,
+            mode: MarketMakingMode::ModeBoth,
+        }];
+
+        let core = &mut Core::new(
+            Context {
+                program_id: &irma::IRMA_ID,
+                accounts: &mut irma::Init {
+                    state: state_account.clone(),
+                    irma_admin: irma_admin_account.clone(),
+                    system_program: sys_account.clone(),
+                },
+                remaining_accounts: &[],
+                bumps: InitBumps {
+                    ..Default::default()
+                },
+            },
+            irma_admin_account.key(),
+            // wallet: Some(Arc::new(payer)),
+            config.clone(),
+            AllPosition::new(&config).unwrap(),
+        );
+
+        let mut accounts: Maint<'_> = Maint {
             state: state_account.clone(),
             irma_admin: irma_admin_account.clone(),
             system_program: sys_account.clone(),
         };
+        let ctx: Context<Maint> = Context::new(
+            program_id,
+            &mut accounts,
+            &[],
+            MaintBumps::default(), // Use default bumps if not needed
+        );
 
-        let lp_pair = Pubkey::from_str_const("FoSDw2L5DmTuQTFe55gWPDXf88euaxAEKFre74CnvQbX");
-
-        let config = vec![PairConfig {
-            pair_address: lp_pair.to_string(),
-            x_amount: 17000000,
-            y_amount: 2000000,
-            mode: MarketMakingMode::ModeBoth,
-        }];
-
-        let core = &Core {
-            context: &mut Context {
-                accounts: &mut irma::Maint {
-                    irma_admin: payer.clone(),
-                },
-                program_id: &irma::IRMA_ID,
-                system_program: system_program::ID,
-                state: Pubkey::new_unique(),
-                bumps: MaintBumps {
-                    ..Default::default()
-                },
-                remaining_accounts: vec![],
-            },
-            owner: payer.key(),
-            // wallet: Some(Arc::new(payer)),
-            config: config.clone(),
-            state: AllPosition::new(&config).unwrap(),
-        };
-
-        core.refresh_state().unwrap();
+        core.refresh_state(&ctx).unwrap();
 
         let state = core.get_position_state(lp_pair);
 
         // withdraw
-        core.withdraw(&state).unwrap();
+        core.withdraw(&ctx, &state).unwrap();
     }
 
     #[test]
     fn test_swap() {
-        let wallet = env::var("MM_WALLET").unwrap();
-        let cluster = env::var("MM_CLUSTER").unwrap();
-
-        let payer = Signer::from_bytes(&[173,177,222,100,53,3,221,245,170,194,176,252,33,178,10,255,15,187,170,173,10,186,165,168,151,74,63,164,139,157,99,181,76,60,198,114,242,172,107,26,16,31,143,26,84,158,47,147,137,90,208,87,250,178,216,215,57,39,99,180,157,70,220,138]).unwrap();
+        let program_id: &Pubkey = &IRMA_ID;
+        let (state_account, irma_admin_account, sys_account) 
+                = initialize_anchor(program_id);
 
         let lp_pair = Pubkey::from_str_const("FoSDw2L5DmTuQTFe55gWPDXf88euaxAEKFre74CnvQbX");
 
@@ -160,29 +209,41 @@ mod core_test {
             mode: MarketMakingMode::ModeBoth,
         }];
 
-        let core = &Core {
-            context: &mut Context {
-                accounts: &mut irma::Maint {
-                    state: Pubkey::new_unique(),
-                    irma_admin: payer.clone(),
-                    system_program: system_program::ID,
-                },
+        let core = &mut Core::new(
+            Context {
                 program_id: &irma::IRMA_ID,
-                bumps: MaintBumps {
+                accounts: &mut irma::Init {
+                    state: state_account.clone(),
+                    irma_admin: irma_admin_account.clone(),
+                    system_program: sys_account.clone(),
+                },
+                remaining_accounts: &[], // Empty for now, add real accounts when needed
+                bumps: InitBumps {
                     ..Default::default()
                 },
-                remaining_accounts: vec![],
             },
-            owner: payer.key(),
+            irma_admin_account.key(),
             // wallet: Some(Arc::new(payer)),
-            config: config.clone(),
-            state: AllPosition::new(&config).unwrap(),
-        };
+            config.clone(),
+            AllPosition::new(&config).unwrap(),
+        );
 
-        core.refresh_state().unwrap();
+        let mut accounts: Maint<'_> = Maint {
+            state: state_account.clone(),
+            irma_admin: irma_admin_account.clone(),
+            system_program: sys_account.clone(),
+        };
+        let ctx: Context<Maint> = Context::new(
+            program_id,
+            &mut accounts,
+            &[],
+            MaintBumps::default(), // Use default bumps if not needed
+        );
+
+        core.refresh_state(&ctx).unwrap();
 
         let state = core.get_position_state(lp_pair);
 
-        core.swap(&state, 1000000, true).unwrap();
+        core.swap(&ctx, &state, 1000000, true).unwrap();
     }
 }
