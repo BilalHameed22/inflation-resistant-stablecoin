@@ -155,6 +155,7 @@ impl Core {
     pub fn refresh_state(&mut self, context: &Context<Maint>) -> Result<()> {
 
         for pair in self.config.iter() {
+            msg!("==> Refreshing state for pair: {}", pair.pair_address);
             let pair_address =
                 Pubkey::from_str(&pair.pair_address).unwrap();
 
@@ -173,6 +174,7 @@ impl Core {
             let mut max_bin_id = 0;
             let mut bin_arrays = HashMap::<Pubkey, BinArray>::new();
 
+            msg!("    Found {} positions", position_key_with_state.len());
             if position_key_with_state.len() > 0 {
                 // sort position by bin id
                 position_key_with_state
@@ -203,6 +205,8 @@ impl Core {
 
                 let bin_arrays_raw: HashMap::<Pubkey, Option<BinArray>> 
                                 = Core::get_multiple_bytemuck_accounts(context, &bin_array_keys)?;
+
+                msg!("    Found {} bin arrays", bin_arrays_raw.len());
 
                 for (key, bin_array_option) in bin_arrays_raw.iter() {
                     if let Some(bin_array_state) = bin_array_option {

@@ -281,6 +281,10 @@ pub mod irma {
         pricing::get_prices(ctx, &quote_token)
     }
 
+    pub fn set_mint_price(ctx: Context<Maint>, quote_token: String, new_price: f64) -> Result<()> {
+        pricing::set_mint_price(ctx, &quote_token, new_price)
+    }
+
     // NOTE: In the two functions below, the Common accounts struct previously allowed the trader herself
     // to access IRMA. However, now we are changing it so that only the irma_admin (the program
     // maintainer) can call these functions to inform the pricing module of trade events. In other words,
