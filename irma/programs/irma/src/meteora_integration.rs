@@ -220,7 +220,8 @@ impl Core {
             state.positions = positions;
             state.min_bin_id = min_bin_id;
             state.max_bin_id = max_bin_id;
-            state.last_update_timestamp = Self::get_epoch_sec()?.max(0) as u64;
+            // TODO: skip for now
+            // state.last_update_timestamp = Self::get_epoch_sec()?.max(0) as u64;
         }
 
         Ok(())
@@ -507,9 +508,9 @@ impl Core {
         swap_for_y: bool
     ) -> Result<()> {
 
-        let lb_pair_state = state.lb_pair_state.as_ref().ok_or(
-                Error::from(CustomError::MissingLbPairState)
-            )?;
+        let Some(lb_pair_state) = state.lb_pair_state else {
+            return Err(Error::from(CustomError::MissingLbPairState));
+        };
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
         let lb_pair = state.lb_pair;
 
