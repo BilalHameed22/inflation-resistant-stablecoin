@@ -6,6 +6,7 @@ use std::mem::size_of;
 use std::str::FromStr;
 
 // Module declarations
+pub mod errors;
 pub mod pricing;
 pub mod position_manager;
 pub mod meteora_integration;
@@ -14,7 +15,8 @@ pub mod bin_array_manager;
 pub mod utils;
 
 // Import the state structs from your modules, as they are used in the account definitions.
-use pricing::{StateMap, StableState, CustomError};
+use pricing::{StateMap, StableState};
+use errors::CustomError;
 
 // declare_program!(dlmm);
 // use commons::dlmm::borsh::*;
@@ -70,7 +72,12 @@ impl FromStr for MarketMakingMode {
 #[derive(Accounts)]
 pub struct Init<'info> {
     // Note: We need to qualify MAX_BACKING_COUNT with its module
-    #[account(init, space=32 + 8 + size_of::<StableState>()*pricing::MAX_BACKING_COUNT, payer=irma_admin, seeds=[b"state".as_ref()], bump)]
+    #[account(
+        init,
+        space=32 + 8 + size_of::<StableState>()*pricing::MAX_BACKING_COUNT,
+        payer=irma_admin, seeds=[b"state_v4".as_ref()],
+        bump
+    )]
     pub state: Account<'info, StateMap>,
     #[account(mut)]
     pub irma_admin: Signer<'info>,
@@ -82,7 +89,13 @@ pub struct Init<'info> {
     //   - 4 bytes for all_positions Vec length + (max 10 positions * ~300 bytes each) = 3004 bytes  
     //   - 4 bytes for tokens Vec length + (max 20 tokens * ~200 bytes each) = 4004 bytes
     // Total: 8 + 32 + 2004 + 3004 + 4004 + buffer = ~10000 bytes
-    #[account(init, space=8 + 10000, payer=irma_admin, seeds=[b"core".as_ref()], bump)]
+    #[account(
+        init,
+        space=8 + 10000,
+        payer=irma_admin,
+        seeds=[b"core_v4".as_ref()],
+        bump
+    )]
     pub core: Account<'info, Core>,
     pub system_program: Program<'info, System>,
     // pub bumps: InitBumps,
@@ -90,9 +103,11 @@ pub struct Init<'info> {
 
 #[derive(Accounts)]
 pub struct Maint<'info> {
-    #[account(mut)]
+    #[account(mut, seeds=[b"state_v4".as_ref()], bump)]
     pub state: Account<'info, StateMap>,
     pub irma_admin: Signer<'info>,
+    #[account(mut, seeds=[b"core_v4".as_ref()], bump)]
+    pub core: Account<'info, Core>,
     pub system_program: Program<'info, System>,
     // pub bumps: MaintBumps,
 }
@@ -132,9 +147,12 @@ pub mod irma {
         config_keys: Vec<String>
     ) -> Result<()> {
         let owner_pk = Pubkey::from_str(&owner).unwrap(); // map_err(|_| Error::InvalidPubkey)?;
+        assert_eq!(config_keys.len() > 0, true);
         let config_pks: Vec<Pubkey> = config_keys.iter()
             .map(|key| Pubkey::from_str(key).unwrap()) // map_err(|_| Error::InvalidPubkey)
             .collect();
+
+        assert_eq!(config_pks.len() > 0, true);
 
         // Initialize the pricing system first
         pricing::init_pricing(&mut ctx)?;
@@ -145,7 +163,7 @@ pub mod irma {
             if let Some(lb_pair_account) = ctx.remaining_accounts.get(i) {
                 // Store the LbPair account's pubkey directly
                 // TODO: Add validation that this is actually an LbPair account
-                stablecoin.dlmm_lb_pair = lb_pair_account.key();
+                stablecoin.pool_id = lb_pair_account.key();
                 msg!("Set LbPair {} for stablecoin {} at index {}", 
                      lb_pair_account.key(), stablecoin.symbol, i);
             } else {
@@ -159,13 +177,15 @@ pub mod irma {
         msg!("IRMA protocol initialized with owner: {}", owner_pk);
         msg!("Config keys count: {}", config_pks.len());
 
+        assert_eq!(config_pks.len() > 0, true);
+
         let core = Core::create_core(owner_pk, config_pks)?;
         ctx.accounts.core.set_inner(core);
         Ok(())
     }
 
     pub fn add_reserve(ctx: Context<Maint>, symbol: String, mint_address: Pubkey, decimals: u8) -> Result<()> {
-        msg!("Add stablecoin entry, size of StateMap: {}", size_of::<StateMap>());
+        msg!("Add stablecoin entry, size of StateMap: {}", ctx.accounts.state.reserves.len());
         pricing::add_reserve(ctx, &symbol, mint_address, decimals)
     }
 
@@ -175,6 +195,10 @@ pub mod irma {
 
     pub fn disable_reserve(ctx: Context<Maint>, symbol: String) -> Result<()> {
         pricing::disable_reserve(ctx, &symbol)
+    }
+
+    pub fn list_reserves(ctx: Context<Maint>) -> Result<String> {
+        Ok(pricing::list_reserves(ctx))
     }
 
     pub fn get_redemption_price(ctx: Context<Maint>, quote_token: String) -> Result<f64> {
