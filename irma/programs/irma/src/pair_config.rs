@@ -21,12 +21,12 @@ pub fn should_market_making(config: &Vec<PairConfig>) -> bool {
 
 pub fn get_pair_config(config: &Vec<PairConfig>, pair_addr: Pubkey) -> PairConfig {
     for pair_config in config.iter() {
-        if pair_config.pair_address == pair_addr.to_base58() {
+        if pair_config.pair_address == pair_addr.to_string() {
             return pair_config.clone();
         }
     }
     return PairConfig {
-        pair_address: pair_addr.to_base58(),
+        pair_address: pair_addr.to_string(),
         x_amount: 0,
         y_amount: 0,
         mode: MarketMakingMode::ModeView,
