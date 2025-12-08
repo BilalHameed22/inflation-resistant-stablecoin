@@ -62,4 +62,6 @@ pub enum CustomError {
     InvalidPubkey,
     #[msg("Invalid LbPair state.")]
     InvalidLbPairState,
+    #[msg("For IRMA, two-sided liquidity provision is not supported.")]
+    InvalidDepositAmounts,
 }
