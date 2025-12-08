@@ -149,5 +149,12 @@ async function add_reserve() {
   }
 }
 
+console.log("Starting add_reserve script...");
+console.log("=================================");
+console.log("NOTE: This just adds the reserve stablecoin to the pricing.rs state map data account.");
+console.log("To get the IRMA program to work with this new stablecoin, its DLMM pair must be connected to it.");
+console.log("There is another test script, connect_lb_pair.ts, that needs to run after this one.");
+console.log("=================================\n");
+
 // Run the function
-add_reserve().catch(console.error);
+add_reserve(); // .catch(console.error);

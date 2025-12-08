@@ -727,17 +727,31 @@ impl Core {
     }
 
     /// Deposit tokens into the position (add liquidity)
+    /// At any given time, we have at most two single-bin positions per pair
+    /// (one for each side of the stablecoin pair).
+    /// This function deposits liquidity into one of those positions.
+    /// This is not about changing the price. It's all about adding liquidity.
+    /// Note that "SinglePosition" here refers to the position state for a given LbPair,
+    /// which may contain one or two actual position accounts.
     pub fn deposit(
         &self,
         context: &Context<Maint>,
         state: &SinglePosition,
-        amount_x: u64,
-        amount_y: u64,
-        active_id: i32
+        amount_x: u64, // must zero if amount_y > 0 and vice versa
+        amount_y: u64, // must zero if amount_x > 0 and vice versa
+        active_id: i32 // the active bin most probably is not our bin id
     ) -> Result<()> {
+        // enforce exclusive OR condition
+        require!(
+            (amount_x == 0) != (amount_y == 0),
+            CustomError::InvalidDepositAmounts
+        );
+
         let payer = context.accounts.irma_admin.clone();
 
-        // let rpc_client = self.rpc_client();
+        // for IRMA, the lower bin id is always equal to the upper bin id
+        // since we only provide liquidity in one bin at any time;
+        // we don't really care where the market is, so we don't use active_id.
         let lower_bin_id = active_id - (MAX_BIN_PER_ARRAY as i32).checked_div(2).unwrap();
 
         let upper_bin_id = lower_bin_id
@@ -782,7 +796,8 @@ impl Core {
             }
         }
 
-        // fake it for now; note position is a pubkey
+        // we only have two positions per pair at any time
+        // and we need to determine which one to deposit into 
         let position = *state.position_pks.first().ok_or(
                 Error::from(CustomError::PositionNotFound)
             )?;
@@ -913,7 +928,9 @@ impl Core {
         Ok(())
     }
 
-    // Get the maximum depositable amount based on user's current token balance
+    /// get_deposit_amount:
+    /// Get the maximum depositable amount based on user's current token balance.
+    /// Do we need this routine? Maybe not.
     pub fn get_deposit_amount(
         &self,
         context: &Context<Maint>,
@@ -963,7 +980,11 @@ impl Core {
         Ok((amount_x, amount_y))
     }
 
-
+    /// get_all_positions:
+    /// We should have at most only two positions per lb_pair at any one time.
+    /// At the beginning of a  new pair, there will be only one position.
+    /// The first swap that arrives will cause the buyback position to be created.
+    /// After that, both positions will be rebalanced as needed.
     pub fn get_all_positions(&self) -> Vec<SinglePosition> {
         let state = &self.position_data;
         let mut positions = vec![];
@@ -1147,6 +1168,7 @@ impl Core {
 
     /// Calculate total position amounts and fees for each position info, across all positions
     /// Note: this is not used anywhere and should probably be added to the main API.
+    /// (Renamed from its original misnomer "get_positions")
     pub fn calc_all_positions(&self, context: &Context<Maint>) -> Result<Vec<PositionInfo>> {
         let all_positions = self.get_all_positions();
         let tokens = self.get_all_tokens();

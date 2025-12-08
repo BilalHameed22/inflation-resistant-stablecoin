@@ -254,6 +254,12 @@ async function connect_lb_pair() {
   }
 }
 
+console.log("=================================");
+console.log("NOTE: Before running this script, ensure that the add_reserve.ts script has been executed.");
+console.log("The purpose of this script is to test the updateReserveLbpair function of the IRMA program.");
+console.log("The updateReserveLbpair function connects a liquidity-bearing pair to an IRMA reserve.");
+console.log("=================================\n");
+
 // const args = process.argv.slice(2);
 // if (args.length < 2) {
 //   console.error("❌ Missing arguments. Usage:");
