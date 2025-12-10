@@ -89,7 +89,8 @@ const [corePda] = PublicKey.findProgramAddressSync(
 );
 
 // End of Prelude stuff
-
+//----------------------------------------------------------------------
+// Begin Test: Mint Price Inflation Adjustment
 async function testMintPriceInflation() {
 
   console.log("\n🚀 Set IRMA mint price for 'devUSDC'");

@@ -102,10 +102,10 @@ pub fn disable_reserve(ctx: Context<Maint>, symbol: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_params(state_map: &StateMap, quote_token: &str) -> Result<()> {
-    require!(state_map.reserves.len() > 0, CustomError::InvalidReserveList);
-    require!(state_map.contains_reserve(quote_token), CustomError::InvalidQuoteToken);
-    let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
+fn validate_params(reserves: &Vec<StableState>, quote_token: &str) -> Result<()> {
+    require!(reserves.len() > 0, CustomError::InvalidReserveList);
+    require!(reserves.iter().any(|r| r.symbol == quote_token), CustomError::InvalidQuoteToken);
+    let stablecoin = reserves.iter().find(|r| r.symbol == quote_token).unwrap();
     require!(stablecoin.active, CustomError::InvalidQuoteToken);
     require!(stablecoin.backing_decimals > 0, CustomError::InvalidQuoteToken);
     require!(stablecoin.mint_price > 0.0, CustomError::InvalidAmount);
@@ -119,7 +119,7 @@ fn validate_params(state_map: &StateMap, quote_token: &str) -> Result<()> {
 /// The mint price is the ACTUAL price of IRMA in terms of the quote token (no decimals).
 pub fn set_mint_price(ctx: Context<Maint>, quote_token: &str, mint_price: f64) -> Result<()> {
     let state_map = &mut ctx.accounts.state;
-    validate_params(&(*state_map), quote_token)?;
+    validate_params(&state_map.reserves, quote_token)?;
     require!(mint_price > 0.0, CustomError::InvalidAmount);
     require!(
         mint_price < MAX_MINT_PRICE,
@@ -137,7 +137,7 @@ pub fn set_mint_price(ctx: Context<Maint>, quote_token: &str, mint_price: f64) -
 /// human consumption.
 pub fn mint_irma(state_map: &mut Account<StateMap>, quote_token: &str, amount: u64) -> Result<()> {
     require!(amount >= 100_000_000u64, CustomError::InvalidAmount);
-    validate_params(&(*state_map), quote_token)?;
+    validate_params(&state_map.reserves, quote_token)?;
 
     if amount == 0u64 { return Ok(()); };
 
@@ -157,7 +157,7 @@ pub fn mint_irma(state_map: &mut Account<StateMap>, quote_token: &str, amount: u
 /// FIXME: If resulting redemption price increases by more than 0.0000001, then actual redemption price 
 /// should be updated immediately.
 pub fn redeem_irma(state_map: &mut Account<StateMap>, quote_token: &str, irma_amount: u64) -> Result<()> {
-    validate_params(&(*state_map), quote_token)?;
+    validate_params(&state_map.reserves, quote_token)?;
 
     if irma_amount == 0 { return Ok(()) };
 
@@ -182,18 +182,16 @@ pub fn list_reserves(ctx: Context<Maint>) -> String {
 
 pub fn get_reserve_info(ctx: Context<Maint>, quote_token: &str) -> Result<StableState> {
     let state_map = &mut ctx.accounts.state;
-    validate_params(&(*state_map), quote_token)?;
+    validate_params(&state_map.reserves, quote_token)?;
     let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
     Ok(stablecoin.clone())
 }
 
 /// Get the current redemption price for a given quote token.
 /// Redemption price = total backing reserves / total IRMA in circulation
-pub fn get_redemption_price(ctx: Context<Maint>, quote_token: &str) -> Result<f64> {
-    let state_map = &mut ctx.accounts.state;
-    validate_params(&(*state_map), quote_token)?;
-    
-    let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
+pub fn get_redemption_price(reserves: &Vec<StableState>, quote_token: &str) -> Result<f64> {
+    validate_params(reserves, quote_token)?;
+    let stablecoin = reserves.iter().find(|r| r.symbol == quote_token).ok_or(error!(CustomError::ReserveNotFound))?;
     let backing_reserves = stablecoin.backing_reserves;
     let irma_in_circulation = stablecoin.irma_in_circulation;
 
@@ -207,14 +205,13 @@ pub fn get_redemption_price(ctx: Context<Maint>, quote_token: &str) -> Result<f6
 }
 
 /// Get both mint and redemption prices for a given quote token.
-pub fn get_prices(ctx: Context<Maint>, quote_token: &str) -> Result<(f64, f64)> {
-    let state_map = &mut ctx.accounts.state;
-    validate_params(&(*state_map), quote_token)?;
-    
-    let stablecoin = state_map.get_stablecoin(quote_token).unwrap();
+pub fn get_prices(reserves: &Vec<StableState>, quote_token: &str) -> Result<(f64, f64)> {
+    validate_params(reserves, quote_token)?;
+
+    let stablecoin = reserves.iter().find(|r| r.symbol == quote_token).unwrap();
     let mint_price = stablecoin.mint_price;
-    let redemption_price = get_redemption_price(ctx, quote_token)?;
-    
+    let redemption_price = get_redemption_price(reserves, quote_token)?;
+
     Ok((mint_price, redemption_price))
 }
 

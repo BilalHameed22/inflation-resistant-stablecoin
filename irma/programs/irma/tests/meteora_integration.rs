@@ -353,7 +353,7 @@ mod core_test {
 
         let lb_pair = Pubkey::from_str_const("FoSDw2L5DmTuQTFe55gWPDXf88euaxAEKFre74CnvQbX");
         let (state_account,
-            irma_admin_account,
+            mut irma_admin_account,
             sys_account,
             position_account_info,
             lb_pair_account_info,
@@ -395,7 +395,7 @@ mod core_test {
         };
 
         // withdraw - now we can borrow core immutably
-        core.withdraw(&ctx, &state).unwrap();
+        core.withdraw(&mut irma_admin_account, remaining_accounts, &state, Pubkey::default()).unwrap();
     }
 
     #[test]
@@ -404,7 +404,7 @@ mod core_test {
 
         let lb_pair = Pubkey::from_str_const("FoSDw2L5DmTuQTFe55gWPDXf88euaxAEKFre74CnvQbX");
         let (state_account,
-            irma_admin_account,
+            mut irma_admin_account,
             sys_account,
             position_account_info,
             lb_pair_account_info,
@@ -445,6 +445,6 @@ mod core_test {
             mut_state.clone() // Clone the state to end the mutable borrow
         };
 
-        core.swap(&ctx, &state, 1000000, true).unwrap();
+        core.swap(&mut irma_admin_account, remaining_accounts, &state, 1000000, true).unwrap();
     }
 }

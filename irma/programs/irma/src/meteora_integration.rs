@@ -43,6 +43,10 @@ pub enum AccountData<T> {
     Anchor(T),
 }
 
+const MAX_POSITIONS: usize = 3; // usually 2, but allow 3 during shifts
+const MINTING_POSITION_AMOUNT: u64 = 1_100_000_000; // 1.1 billion units for minting positions
+const REDEMPTION_POSITION_AMOUNT: u64 = 100_000_000; // 100 million units for redemption positions
+
 impl<T> AccountData<T> {
     pub fn into_inner(self) -> T {
         match self {
@@ -141,11 +145,12 @@ impl Core {
     }
 
     fn execute_meteora_instruction(
-        context: &Context<Maint>,
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
         instructions: Vec<Instruction>,
         sign: bool
     ) -> Result<()> {
-        let key = context.accounts.irma_admin.key();
+        let key = payer.key();
         for instruction in instructions.iter() {
             if sign {
                 // If PDA signing needed - manually derive bump
@@ -158,10 +163,10 @@ impl Core {
                     key.as_ref(),
                     &[bump],
                 ];
-                invoke_signed(&instruction, context.remaining_accounts, &[seeds])?;
+                invoke_signed(&instruction, remaining_accounts, &[seeds])?;
             }
             else {
-                invoke(&instruction, context.remaining_accounts)?;
+                invoke(&instruction, remaining_accounts)?;
             }
         }
         Ok(())
@@ -324,7 +329,10 @@ impl Core {
         Ok(())
     }
 
-    fn get_all_token_mints_with_program_id(&self, remaining_accounts: &[AccountInfo]) -> Result<Vec<(Pubkey, Pubkey)>> {
+    fn get_all_token_mints_with_program_id(
+        &self,
+        remaining_accounts: &[AccountInfo]
+    ) -> Result<Vec<(Pubkey, Pubkey)>> {
         let state = &self.position_data;
         let mut token_mints_with_program = vec![];
 
@@ -357,11 +365,11 @@ impl Core {
     // Helper function to get or create associated token account (ATA) on-chain
     fn get_or_create_ata(
         &self,
-        context: &Context<Maint>,
+        remaining_accounts: &[AccountInfo],
         token_mint: Pubkey,
         token_program: Pubkey,
         owner: &Pubkey,
-        payer: &Signer,
+        payer: &mut Signer,
     ) -> Result<Pubkey> {
         let ata_address = get_associated_token_address_with_program_id(
             owner,
@@ -370,7 +378,7 @@ impl Core {
         );
 
         // Check if ATA already exists in remaining_accounts
-        let ata_exists = context.remaining_accounts.iter()
+        let ata_exists = remaining_accounts.iter()
             .any(|acc| acc.key == &ata_address);
 
         if !ata_exists {
@@ -389,7 +397,7 @@ impl Core {
             };
 
             // Execute the instruction
-            Core::execute_meteora_instruction(context, vec![create_ata_ix], true)?;
+            Core::execute_meteora_instruction(payer, remaining_accounts, vec![create_ata_ix], true)?;
         }
 
         Ok(ata_address)
@@ -397,14 +405,15 @@ impl Core {
 
     /// Initialize user associated token accounts for all tokens in the position
     pub fn init_user_ata(
-        &self, context: &Context<Maint>,
+        &self, 
+        wallet: &mut Signer,
+        remaining_accounts: &[AccountInfo],
     ) -> Result<()> {
-        let wallet = &context.accounts.irma_admin;
         for (token_mint, program_id) in self.get_all_token_mints_with_program_id(
-            context.remaining_accounts
+            remaining_accounts
         )?.iter() {
             self.get_or_create_ata(
-                context,
+                remaining_accounts,
                 *token_mint,
                 *program_id,
                 &wallet.key(),
@@ -415,25 +424,24 @@ impl Core {
         Ok(())
     }
 
-    /// withdraw all positions and close them
-    /// we need a version of this that just withdraws from one side without closing
+    /// Withdraw a position and close it in a single transaction.
+    /// Liquidity must have been deposited to the new price single-bin position, so the old 
+    /// single-bin position can be safely withdrawn and closed.
     pub fn withdraw(
         &self,
-        context: &Context<Maint>,
-        state: &SinglePosition
+        payer: &mut Signer,
+        remaining_accounts_in: &[AccountInfo],
+        state: &SinglePosition,
+        new_position_key: Pubkey, // we should not withdraw from the new position
     ) -> Result<()> {
         if state.position_pks.len() == 0 {
             return Ok(());
         }
 
-        // let rpc_client = self.rpc_client();
-
-        let payer = context.accounts.irma_admin.clone();
-
         let (event_authority, _bump) = derive_event_authority_pda();
 
         let lb_pair = state.lb_pair;
-        let lb_pair_state = fetch_lb_pair_state(context.remaining_accounts, &state.lb_pair)?;
+        let lb_pair_state = fetch_lb_pair_state(remaining_accounts_in, &state.lb_pair)?;
 
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
 
@@ -443,7 +451,7 @@ impl Core {
         if let Some((slices, remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                context.remaining_accounts,
+                remaining_accounts_in,
                 ActionType::Liquidity,
             )?
         {
@@ -452,7 +460,11 @@ impl Core {
         }
 
         for &position_key in state.position_pks.iter() {
-            let vec_positions = fetch_positions(context.remaining_accounts, &[position_key])?;
+            if position_key == new_position_key {
+                msg!("Skipping withdraw for new position {}", new_position_key);
+                continue;
+            }
+            let vec_positions = fetch_positions(remaining_accounts_in, &[position_key])?;
             let position_state = vec_positions
                 .get(0)
                 .ok_or(error!(CustomError::PositionNotFound))?;
@@ -557,6 +569,7 @@ impl Core {
 
             instructions.push(claim_fee_ix);
 
+            // Close single bin position
             let accounts = dlmm::client::accounts::ClosePosition2 {
                 position: position_key,
                 sender: payer.key(),
@@ -576,7 +589,7 @@ impl Core {
 
             instructions.push(close_position_ix);
 
-            let _result = Core::execute_meteora_instruction(context, instructions, true)?;
+            let _result = Core::execute_meteora_instruction(payer, remaining_accounts_in, instructions, true)?;
             msg!("Close position_key {position_key} {result}");
         }
 
@@ -590,20 +603,19 @@ impl Core {
     /// If not, according to Taha, we can use withdraw() above instead.
     pub fn swap(
         &self,
-        context: &Context<Maint>,
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
         state: &SinglePosition,
         amount_in: u64,
         swap_for_y: bool
     ) -> Result<()> {
 
-        let lb_pair_state = fetch_lb_pair_state(context.remaining_accounts, &state.lb_pair)?;
+        let lb_pair_state = fetch_lb_pair_state(remaining_accounts, &state.lb_pair)?;
 
         msg!("==> Swapping on pair: {}", state.lb_pair);
 
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
         let lb_pair = state.lb_pair;
-
-        let payer = context.accounts.irma_admin.clone();
 
         let (event_authority, _bump) = derive_event_authority_pda();
 
@@ -611,7 +623,7 @@ impl Core {
 
         let (bin_array_bitmap_extension, _bump) = derive_bin_array_bitmap_extension(lb_pair);
 
-        let bitmap_extension = match get_bytemuck_account::<BinArrayBitmapExtension>(context.remaining_accounts, &bin_array_bitmap_extension) {
+        let bitmap_extension = match get_bytemuck_account::<BinArrayBitmapExtension>(remaining_accounts, &bin_array_bitmap_extension) {
             Some(bitmap_extension) => bitmap_extension,
             None => BinArrayBitmapExtension::default(),
         };
@@ -660,24 +672,24 @@ impl Core {
         };
 
         let mut remaining_accounts_info = RemainingAccountsInfo { slices: vec![] };
-        let mut remaining_accounts = vec![];
+        let mut remaining_accounts_vec = vec![];
 
         msg!("    Preparing Token 2022 related accounts...");
 
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                context.remaining_accounts,
+                remaining_accounts,
                 ActionType::Liquidity,
             )?
         {
             remaining_accounts_info.slices = slices;
-            remaining_accounts.extend(transfer_hook_remaining_accounts);
+            remaining_accounts_vec.extend(transfer_hook_remaining_accounts);
         }
 
-        msg!("    transfer hook remaining accounts: {}", remaining_accounts.len());
+        msg!("    transfer hook remaining accounts: {}", remaining_accounts_vec.len());
 
-        remaining_accounts.extend(bin_arrays_account_meta);
+        remaining_accounts_vec.extend(bin_arrays_account_meta);
 
         let main_accounts = dlmm::client::accounts::Swap2 {
             lb_pair,
@@ -706,7 +718,7 @@ impl Core {
         }
         .data();
 
-        let accounts = [main_accounts.to_vec(), remaining_accounts].concat();
+        let accounts = [main_accounts.to_vec(), remaining_accounts_vec].concat();
 
         msg!("    total accounts for swap: {}", accounts.len());
 
@@ -720,7 +732,7 @@ impl Core {
 
         let instructions = [swap_ix];
 
-        let _result = Core::execute_meteora_instruction(context, instructions.to_vec(), true)?;
+        let _result = Core::execute_meteora_instruction(payer, remaining_accounts, instructions.to_vec(), true)?;
         msg!("Swap {amount_in} {swap_for_y} {result:?}");
 
         Ok(())
@@ -732,33 +744,32 @@ impl Core {
     /// This function deposits liquidity into one of those positions.
     /// This is not about changing the price. It's all about adding liquidity.
     /// Note that "SinglePosition" here refers to the position state for a given LbPair,
-    /// which may contain one or two actual position accounts.
+    /// which may contain one or two actual position data accounts.
+    /// 1. Initialize bin arrays if they do not exist.
+    /// 2. Initialize position if it does not exist. (For IRMA, it should not exist yet.)
+    /// 3. Add liquidity to the position.
     pub fn deposit(
         &self,
-        context: &Context<Maint>,
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
+        // reserves: &Vec<StableState>,
         state: &SinglePosition,
         amount_x: u64, // must zero if amount_y > 0 and vice versa
         amount_y: u64, // must zero if amount_x > 0 and vice versa
-        active_id: i32 // the active bin most probably is not our bin id
-    ) -> Result<()> {
+        new_price_bin_id: i32 // this is not the lb_pair active bin id; this is the bin we want to deposit to
+    ) -> Result<Pubkey> {
         // enforce exclusive OR condition
         require!(
             (amount_x == 0) != (amount_y == 0),
             CustomError::InvalidDepositAmounts
         );
 
-        let payer = context.accounts.irma_admin.clone();
-
         // for IRMA, the lower bin id is always equal to the upper bin id
         // since we only provide liquidity in one bin at any time;
         // we don't really care where the market is, so we don't use active_id.
-        let lower_bin_id = active_id - (MAX_BIN_PER_ARRAY as i32).checked_div(2).unwrap();
+        let lower_bin_id = new_price_bin_id;
 
-        let upper_bin_id = lower_bin_id
-            .checked_add(MAX_BIN_PER_ARRAY as i32)
-            .unwrap()
-            .checked_sub(1)
-            .unwrap();
+        let upper_bin_id = new_price_bin_id;
 
         let lower_bin_array_idx = BinArray::bin_id_to_bin_array_index(lower_bin_id)?;
         let upper_bin_array_idx = lower_bin_array_idx
@@ -775,7 +786,7 @@ impl Core {
             // Initialize bin array if not exists
             let (bin_array, _bump) = derive_bin_array_pda(lb_pair, idx.into());
 
-            if get_bytemuck_account::<BinArray>(context.remaining_accounts, &bin_array).is_none() {
+            if get_bytemuck_account::<BinArray>(remaining_accounts, &bin_array).is_none() {
                 let accounts = dlmm::client::accounts::InitializeBinArray {
                     bin_array,
                     funder: payer.key(),
@@ -796,11 +807,23 @@ impl Core {
             }
         }
 
+        if state.position_pks.len() > 1 {
+            return Err(error!(CustomError::TooManyPositionsForPair));
+        }
+
         // we only have two positions per pair at any time
         // and we need to determine which one to deposit into 
-        let position = *state.position_pks.first().ok_or(
-                Error::from(CustomError::PositionNotFound)
-            )?;
+        // let position = *state.position_pks.first().ok_or(
+        //         Error::from(CustomError::PositionNotFound)
+        //     )?;
+
+        // Initialize new position
+        let (position, _bump) = derive_position_pda(
+            payer.key(),
+            lb_pair,
+            lower_bin_id,
+            upper_bin_id,
+        );
 
         let accounts = dlmm::client::accounts::InitializePosition {
             lb_pair,
@@ -816,7 +839,7 @@ impl Core {
 
         let data = dlmm::client::args::InitializePosition {
             lower_bin_id,
-            width: DEFAULT_BIN_PER_POSITION as i32,
+            width: 1i32, // DEFAULT_BIN_PER_POSITION as i32,
         }
         .data();
 
@@ -837,7 +860,7 @@ impl Core {
         let (bin_array_lower, _bump) = derive_bin_array_pda(lb_pair, lower_bin_array_idx.into());
         let (bin_array_upper, _bump) = derive_bin_array_pda(lb_pair, upper_bin_array_idx.into());
 
-        let lb_pair_state = fetch_lb_pair_state(context.remaining_accounts, &lb_pair)?;
+        let lb_pair_state = fetch_lb_pair_state(remaining_accounts, &lb_pair)?;
         let [token_x_program, token_y_program] = lb_pair_state.get_token_programs()?;
 
         let user_token_x = get_associated_token_address_with_program_id(
@@ -853,21 +876,21 @@ impl Core {
         );
 
         let mut remaining_accounts_info = RemainingAccountsInfo { slices: vec![] };
-        let mut remaining_accounts = vec![];
+        let mut remaining_accounts_vec = vec![];
 
         if let Some((slices, transfer_hook_remaining_accounts)) =
             get_potential_token_2022_related_ix_data_and_accounts(
                 &lb_pair_state,
-                context.remaining_accounts,
+                remaining_accounts,
                 ActionType::Liquidity,
             )?
         {
             remaining_accounts_info.slices = slices;
-            remaining_accounts.extend(transfer_hook_remaining_accounts);
+            remaining_accounts_vec.extend(transfer_hook_remaining_accounts);
         }
 
-        remaining_accounts.extend(
-            [bin_array_lower, bin_array_upper]
+        remaining_accounts_vec.extend(
+            [bin_array_lower, bin_array_upper, position]
                 .into_iter()
                 .map(|k| AccountMeta::new(k, false)),
         );
@@ -912,7 +935,7 @@ impl Core {
         }
         .data();
 
-        let accounts = [main_accounts.to_vec(), remaining_accounts].concat();
+        let accounts = [main_accounts.to_vec(), remaining_accounts_vec].concat();
 
         let instruction = Instruction {
             program_id: DLMM_ID,
@@ -922,10 +945,10 @@ impl Core {
 
         instructions.push(instruction);
 
-        let _result = Core::execute_meteora_instruction(context, instructions, true)?;
+        let _result = Core::execute_meteora_instruction(payer, remaining_accounts, instructions, true)?;
         msg!("deposit {amount_x} {amount_y} {_result}");
 
-        Ok(())
+        Ok(position)
     }
 
     /// get_deposit_amount:
@@ -999,163 +1022,206 @@ impl Core {
         state.tokens.clone()
     }
 
+    /// For each reserve coin, check how far the two current prices are from those set by pricing.rs
+    /// If the difference is at least a bin away, we shift to another bin.
+    /// Note that each position in IRMA is single-sided and single-bin.
+    /// In other words, min_bin_id == max_bin_id for each position, and 
+    /// there are two positions: one for each side of the stablecoin pair.
     pub fn check_shift_price_range(
-        &mut self,
-        context: &mut Context<Maint>
+        core: &mut Core,
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
+        reserves: &Vec<StableState>,
+        core_position: &mut SinglePosition,
     ) -> Result<()> {
-        let all_positions = self.get_all_positions();
-        for position in all_positions.iter() {
-            let pair_config = get_pair_config(&self.config, position.lb_pair);
-            // check whether out of price range
-            let lb_pair = fetch_lb_pair_state(context.remaining_accounts, &position.lb_pair)?;
-            if pair_config.mode == MarketMakingMode::ModeRight
-                && lb_pair.active_id > position.max_bin_id
-            {
-                self.shift_right(context, &position)?;
-                self.inc_rebalance_time(position.lb_pair);
-            }
+        // ensure that this position is single-bin
+        require!(core_position.min_bin_id == core_position.max_bin_id, CustomError::PositionNotSingleBin);
 
-            if pair_config.mode == MarketMakingMode::ModeLeft
-                && lb_pair.active_id < position.min_bin_id
-            {
-                self.shift_left(context, &position)?;
-                self.inc_rebalance_time(position.lb_pair);
-            }
+        // Find the reserve coin for this position
+        let (reserve_symbol, backing_decimals) = {
+            let reserve_coin = reserves.iter().find(|stablecoin| stablecoin.pool_id == core_position.lb_pair);
+            require!(reserve_coin.is_some(), CustomError::ReserveListPositionListMismatch);
+            let reserve_coin = reserve_coin.unwrap();
+            (reserve_coin.symbol.clone(), reserve_coin.backing_decimals)
+        };
+        
+        let (mint_price, redemption_price) = pricing::get_prices(
+            reserves, &reserve_symbol)?;
 
-            if pair_config.mode == MarketMakingMode::ModeBoth {
-                if lb_pair.active_id < position.min_bin_id {
-                    self.shift_left(context, &position)?;
-                    self.inc_rebalance_time(position.lb_pair);
-                } else if lb_pair.active_id > position.max_bin_id {
-                    self.shift_right(context, &position)?;
-                    self.inc_rebalance_time(position.lb_pair);
-                }
+        // convert prices from f64 to u128 using token decimals
+        let mint_price_u128 = (mint_price * 10.0f64.powi(backing_decimals as i32)) as u128;
+        let redemption_price_u128 = (redemption_price * 10.0f64.powi(backing_decimals as i32)) as u128;
+
+        let lb_pair_state = fetch_lb_pair_state(
+            remaining_accounts, 
+            &core_position.lb_pair
+        )?;
+        let mint_price_bin_id = PositionRaw::get_id_from_price(mint_price_u128, lb_pair_state.bin_step)?;
+        let redemption_price_bin_id = PositionRaw::get_id_from_price(redemption_price_u128, lb_pair_state.bin_step)?;
+
+        let pair_config = get_pair_config(&core.config, core_position.lb_pair);
+        
+        // check whether out of price range
+        if pair_config.mode == MarketMakingMode::ModeRight {
+            if mint_price_bin_id != core_position.min_bin_id {
+                core.shift_mint_position(payer, remaining_accounts, reserves, core_position, mint_price_bin_id)?;
+                core.inc_rebalance_time(core_position.lb_pair);
             }
+            // else if equal, do nothing
+        }
+        // ModeLeft for IRMA means the position for the quote token.
+        else if pair_config.mode == MarketMakingMode::ModeLeft {
+            if redemption_price_bin_id != core_position.min_bin_id {
+                core.shift_redeem_position(payer, remaining_accounts, reserves, core_position, redemption_price_bin_id)?;
+                core.inc_rebalance_time(core_position.lb_pair);
+            }
+        }
+        // ModeBoth should not happen in IRMA
+        else {
+            return Err(Error::from(CustomError::InvalidMarketMakingModeForIRMA));
         }
 
         Ok(())
     }
 
-    fn shift_right(
+
+    /// Shift mint position
+    /// For IRMA, we should deposit first, then withdraw from the old, single bin position.
+    /// Note: this can involve shifting to the right or left, depending on the new_price_bin_id.
+    fn shift_mint_position(
         &mut self,
-        context: &mut Context<Maint>,
-        state: &SinglePosition
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
+        reserves: &Vec<StableState>,
+        state: &SinglePosition,
+        new_price_bin_id: i32, // new mint price bin id
     ) -> Result<()> {
-        let pair_config = get_pair_config(&self.config, state.lb_pair);
-        // validate that x amount is zero
+        msg!("shift mint position {}", state.lb_pair);
+
+        // validate that y amount is zero because this position must be for x:
+        // there should be no y deposit in any position for x (IRMA)
         msg!("shift right {}", state.lb_pair);
-        let position = state.get_positions_total(context.remaining_accounts)?;
-        if position.amount_x != 0 {
-            return Err(Error::from(CustomError::AmountXNotZero));
+        let position_raw = state.get_positions_total(remaining_accounts)?;
+        let amount_y = position_raw.amount_y;
+        if amount_y != 0 {
+            return Err(Error::from(CustomError::AmountYNotZero));
         }
 
-        msg!("withdraw {}", state.lb_pair);
-        // withdraw
-        self.withdraw(context, state)?;
-
-        // buy base
-        let amount_y_for_buy = position
-            .amount_y
-            .checked_div(2)
-            .unwrap();
-
-        // let Some(lb_pair_state) = &state.lb_pair_state else {
-        //     return Err(Error::from(CustomError::MissingLbPairState));
-        // };
-        let lb_pair_state = fetch_lb_pair_state(context.remaining_accounts, &state.lb_pair)?;
-
-        let (amount_x, amount_y) = if amount_y_for_buy != 0 {
-            msg!("swap {}", state.lb_pair);
-            let swap_event = self.swap(context, state, amount_y_for_buy, false).unwrap();
-            msg!("TODO: swap event processing {:?}", swap_event);
-            (
-                position.amount_x, // swap_event.map(|e| e.amount_out).unwrap_or_default(),
-                position.amount_y - amount_y_for_buy
-            )
-        } else {
-            (pair_config.x_amount, pair_config.y_amount)
-        };
-
-        // deposit again, just test with 1 position only
-        msg!("deposit {}", state.lb_pair);
-        match self
-            .deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)
+        // retry if error, amount_y should be zero
+        // this also creates a new position and returns its key
+        msg!("mint deposit for {}", state.lb_pair);
+        let new_position_key = match self
+            .deposit(payer, remaining_accounts, state, MINTING_POSITION_AMOUNT, amount_y, new_price_bin_id)
         {
             Err(_) => {
-                self.deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)?;
+                self.deposit(payer, remaining_accounts, state, MINTING_POSITION_AMOUNT, amount_y, new_price_bin_id)?
             }
-            _ => {}
-        }
+            Ok(pos_key) => pos_key,
+        };
+
+        msg!("redemption position created: {}", new_position_key.to_string());
+        msg!("mint position withdraw in pair {}", state.lb_pair);
+
+        // withdraw
+        self.withdraw(payer, remaining_accounts, state, new_position_key)?;
+
+        // buy base? I don't think so for IRMA
+        // let amount_y_for_buy = position_raw
+        //     .amount_y
+        //     .checked_div(2)
+        //     .unwrap();
+
+        // // let Some(lb_pair_state) = &state.lb_pair_state else {
+        // //     return Err(Error::from(CustomError::MissingLbPairState));
+        // // };
+
+        // let (amount_x, amount_y) = if amount_y_for_buy != 0 {
+        //     msg!("swap {}", state.lb_pair);
+        //     let swap_event = self.swap(context, state, amount_y_for_buy, false).unwrap();
+        //     msg!("TODO: swap event processing {:?}", swap_event);
+        //     (
+        //         position_raw.amount_x, // swap_event.map(|e| e.amount_out).unwrap_or_default(),
+        //         position_raw.amount_y - amount_y_for_buy
+        //     )
+        // } else {
+        //     (pair_config.x_amount, pair_config.y_amount)
+        // };
+
         msg!("refresh state {}", state.lb_pair);
         // fetch positions again (Note: token y is the reserve stablecoin)
-        let reserves = &context.accounts.state.reserves;
-        let remaining_accounts = context.remaining_accounts;
-        let symbol = context.accounts.state.get_stablecoin_symbol(lb_pair_state.token_y_mint)
-            .ok_or(Error::from(CustomError::ReserveNotFound))?
-            .to_string();
+
+        let lb_pair_state = fetch_lb_pair_state(remaining_accounts, &state.lb_pair)?;
+
+        let stablecoin = reserves.iter().find(|r| r.mint_address == lb_pair_state.token_x_mint)
+            .ok_or(Error::from(CustomError::ReserveNotFound))?;
+        let symbol = stablecoin.symbol.to_string();
         self.refresh_position_data(reserves, remaining_accounts, symbol)?;
         Ok(())
     }
 
-    fn shift_left(
+
+    /// Shift redeem position
+    /// For IRMA, we deposit first, then withdraw from the old bin.
+    fn shift_redeem_position(
         &mut self,
-        context: &mut Context<Maint>,
-        state: &SinglePosition
+        payer: &mut Signer,
+        remaining_accounts: &[AccountInfo],
+        reserves: &Vec<StableState>,
+        state: &mut SinglePosition,
+        new_price_bin_id: i32, // new redemption price bin id
     ) -> Result<()> {
-        let pair_config = get_pair_config(&self.config, state.lb_pair);
-        msg!("shift left {}", state.lb_pair);
-        // validate that y amount is zero
-        let position = state.get_positions_total(context.remaining_accounts)?;
-        if position.amount_y != 0 {
-            return Err(Error::from(CustomError::AmountYNotZero));
+        // let pair_config = get_pair_config(&self.config, state.lb_pair);
+        msg!("shift redeem position {}", state.lb_pair);
+
+        // validate that x amount is zero
+        let position_raw = state.get_positions_total(remaining_accounts)?;
+        if position_raw.amount_x != 0 {
+            return Err(Error::from(CustomError::AmountXNotZero));
         }
-        msg!("withdraw {}", state.lb_pair);
-        // withdraw
-        self.withdraw(context, state)?;
-
-        // sell base
-        let amount_x_for_sell = position
-            .amount_x
-            .checked_div(2)
-            .unwrap();
-
-        // let Some(lb_pair_state) = &state.lb_pair_state else {
-        //     return Err(Error::from(CustomError::MissingLbPairState));
-        // };
-        let lb_pair_state = fetch_lb_pair_state(context.remaining_accounts, &state.lb_pair)?;
-
-        let (amount_x, amount_y) = if amount_x_for_sell != 0 {
-                msg!("swap {}", state.lb_pair);
-                let swap_event = self.swap(context, state, amount_x_for_sell, true).unwrap();
-                msg!("TODO: swap event processing {:?}", swap_event);
-                (
-                    position.amount_x - amount_x_for_sell,
-                    position.amount_y // swap_event.map(|e| e.amount_out).unwrap_or_default(),
-                )
-            } else {
-                (pair_config.x_amount, pair_config.y_amount)
-            };
 
         // sanity check with real balances
-        let (amount_x, amount_y) = self.get_deposit_amount(context, state, amount_x, amount_y)?;
-        msg!("deposit {}", state.lb_pair);
-        match self
-            .deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)
+        // let (amount_x, amount_y) = self.get_deposit_amount(context, state, amount_x, amount_y)?;
+        msg!("redemption deposit for {}", state.lb_pair);
+        let new_position_key = match self
+            .deposit(payer, remaining_accounts, state, 0, REDEMPTION_POSITION_AMOUNT, new_price_bin_id)
         {
             Err(_) => {
-                self.deposit(context, state, amount_x, amount_y, lb_pair_state.active_id)?;
+                self.deposit(payer, remaining_accounts, state, 0, REDEMPTION_POSITION_AMOUNT, new_price_bin_id)?
             }
-            _ => {}
-        }
+            Ok(pos_key) => pos_key,
+        };
+
+        msg!("redemption position created: {}", new_position_key.to_string());
+        msg!("redemption position withdraw in pair {}", state.lb_pair);
+        // withdraw
+        self.withdraw(payer, remaining_accounts, state, new_position_key)?;
+
+        // sell base? I don't think so for IRMA
+        // let amount_x_for_sell = position_raw
+        //     .amount_x
+        //     .checked_div(2)
+        //     .unwrap();
+
+        // let (amount_x, amount_y) = if amount_x_for_sell != 0 {
+        //         msg!("swap {}", state.lb_pair);
+        //         let swap_event = self.swap(context, state, amount_x_for_sell, true).unwrap();
+        //         msg!("TODO: swap event processing {:?}", swap_event);
+        //         (
+        //             position_raw.amount_x - amount_x_for_sell,
+        //             position_raw.amount_y // swap_event.map(|e| e.amount_out).unwrap_or_default(),
+        //         )
+        //     } else {
+        //         (pair_config.x_amount, pair_config.y_amount)
+        //     };
 
         msg!("refresh state {}", state.lb_pair);
         // fetch positions again (Note: token y is the reserve stablecoin)
-        let reserves = &context.accounts.state.reserves;
-        let remaining_accounts = context.remaining_accounts;
 
-        let symbol = context.accounts.state.get_stablecoin_symbol(lb_pair_state.token_y_mint)
-            .ok_or(Error::from(CustomError::ReserveNotFound))?
-            .to_string();
+        let lb_pair_state = fetch_lb_pair_state(remaining_accounts, &state.lb_pair)?;
+
+        let stablecoin = reserves.iter().find(|r| r.mint_address == lb_pair_state.token_x_mint)
+            .ok_or(Error::from(CustomError::ReserveNotFound))?;
+        let symbol = stablecoin.symbol.to_string();
         self.refresh_position_data(reserves, remaining_accounts, symbol)?;
         Ok(())
     }

@@ -22,6 +22,7 @@ use commons::bin::*;
 use commons::position::*;
 use commons::{ONE, BASIS_POINT_MAX, SCALE_OFFSET};
 use commons::fetch_positions;
+use commons::conversions::*;
 
 // Serializable version of Mint info
 #[account]
@@ -153,7 +154,7 @@ impl SinglePosition {
     ) -> Result<PositionRaw> {
 
         // Fetch lb pair state
-        let lb_pair_state = commons::conversions::fetch_lb_pair_state(acct_infos, &self.lb_pair)?;
+        let lb_pair_state = fetch_lb_pair_state(acct_infos, &self.lb_pair)?;
         
         // Fetch positions
         let positions = fetch_positions(acct_infos, &self.position_pks)?;
@@ -163,7 +164,7 @@ impl SinglePosition {
         }
         
         // Fetch bin arrays
-        let bin_arrays = commons::conversions::fetch_bin_arrays(acct_infos, &self.bin_array_pks)?;
+        let bin_arrays = fetch_bin_arrays(acct_infos, &self.bin_array_pks)?;
 
         // bin arrays must be present because positions exist
         if bin_arrays.len() == 0 {
@@ -318,6 +319,23 @@ impl PositionRaw {
         let base = ONE.checked_add(bps).unwrap();
 
         Ok(pow(base, active_id).unwrap())
+    }
+
+    pub fn get_id_from_price(price: u128, bin_step: u16) -> Result<i32> {
+        let bps = u128::from(bin_step)
+            .checked_shl(SCALE_OFFSET.into())
+            .unwrap()
+            .checked_div(BASIS_POINT_MAX as u128)
+            .unwrap();
+
+        let one_plus_bps = ONE.checked_add(bps).unwrap();
+        
+        // Solve for active_id from: price = (1 + bps) * active_id
+        let active_id = price
+            .checked_div(one_plus_bps)
+            .ok_or(CustomError::MathError)?;
+            
+        Ok(active_id as i32)
     }
 }
 

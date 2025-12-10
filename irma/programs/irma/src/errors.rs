@@ -64,4 +64,14 @@ pub enum CustomError {
     InvalidLbPairState,
     #[msg("For IRMA, two-sided liquidity provision is not supported.")]
     InvalidDepositAmounts,
+    #[msg("Reserve list and position list mismatch.")]
+    ReserveListPositionListMismatch,
+    #[msg("IRMA positions must be single-bin.")]
+    PositionNotSingleBin,
+    #[msg("Too many positions for pair.")]
+    TooManyPositionsForPair,
+    #[msg("Math error occurred.")]
+    MathError,
+    #[msg("Invalid MarketMakingMode for IRMA")]
+    InvalidMarketMakingModeForIRMA,
 }

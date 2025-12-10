@@ -236,11 +236,11 @@ pub mod irma {
     }
 
     pub fn get_redemption_price(ctx: Context<Maint>, quote_token: String) -> Result<f64> {
-        pricing::get_redemption_price(ctx, &quote_token)
+        pricing::get_redemption_price(&ctx.accounts.state.reserves, &quote_token)
     }
 
     pub fn get_prices(ctx: Context<Maint>, quote_token: String) -> Result<(f64, f64)> {
-        pricing::get_prices(ctx, &quote_token)
+        pricing::get_prices(&ctx.accounts.state.reserves, &quote_token)
     }
 
     pub fn set_mint_price(ctx: Context<Maint>, quote_token: String, new_price: f64) -> Result<()> {
@@ -275,6 +275,28 @@ pub mod irma {
         let remaining_accounts = ctx.remaining_accounts;
 
         core.refresh_position_data_with_accounts(state, &remaining_accounts, sold_token, irma_amount, false)
+    }
+
+    /// Check all LB pair positions and update from pricing.rs/
+    /// This is used to periodically sync all positions.
+    pub fn check_shift_price_ranges(ctx: Context<Maint>) -> Result<()> {
+        // Extract references to avoid double mutable borrow
+        let corei = &mut ctx.accounts.core.clone();
+        let core = &mut ctx.accounts.core;
+        let payer = &mut ctx.accounts.irma_admin;
+        let reserves = &mut ctx.accounts.state.reserves;
+        let remaining_accounts = ctx.remaining_accounts;
+
+        for position in corei.position_data.all_positions.iter_mut() {
+            Core::check_shift_price_range(
+                core,
+                payer,
+                remaining_accounts,
+                reserves,
+                position,
+            )?;
+        }
+        Ok(())
     }
 
     /// Helper instruction to ensure Core type is included in IDL
